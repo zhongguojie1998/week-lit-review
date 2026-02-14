@@ -11,7 +11,7 @@
     {
       "name": "weekly-lit-review",
       "version": "1.0.0",
-      "source": "./plugin",
+      "source": "./",
       "description": "Weekly genomics literature review. Searches bioRxiv + 15 journals, downloads PDFs, Claude reads them and writes critical reviews with 0-10 scores."
     }
   ]
