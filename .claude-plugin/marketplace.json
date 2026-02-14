@@ -1,0 +1,18 @@
+{
+  "name": "zhongguojie1998",
+  "owner": {
+    "name": "Guojie Zhong"
+  },
+  "metadata": {
+    "description": "Plugins by Guojie Zhong",
+    "homepage": "https://github.com/zhongguojie1998/weekly-lit-review"
+  },
+  "plugins": [
+    {
+      "name": "weekly-lit-review",
+      "version": "1.0.0",
+      "source": ".",
+      "description": "Weekly genomics literature review. Searches bioRxiv + 15 journals, downloads PDFs, Claude reads them and writes critical reviews with 0-10 scores."
+    }
+  ]
+}
