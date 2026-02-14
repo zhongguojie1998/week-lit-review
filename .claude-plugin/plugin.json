@@ -1,0 +1,11 @@
+{
+  "name": "weekly-lit-review",
+  "version": "1.0.0",
+  "description": "Weekly genomics literature review. Searches bioRxiv + 15 journals, downloads PDFs, Claude reads them and writes critical reviews with 0-10 scores. No API key needed.",
+  "author": {
+    "name": "Guojie Zhong"
+  },
+  "license": "MIT",
+  "keywords": ["genomics", "literature-review", "bioRxiv", "pdf-review"],
+  "repository": "https://github.com/your-username/weekly-lit-review"
+}

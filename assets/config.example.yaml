@@ -1,0 +1,103 @@
+# Weekly Genomics Literature Review — Configuration
+# ==================================================
+# Copy this to config.yaml and customize as needed.
+
+# Email recipient
+recipient_email: "guojiezhong@nygenome.org"
+
+# How far back to search (in days)
+days_lookback: 7
+
+# Maximum papers to fetch per source
+max_papers_per_source: 50
+
+# Maximum papers to send through Claude evaluation
+# (controls API cost — ~$0.01-0.03 per paper with Sonnet)
+max_papers_to_evaluate: 80
+
+# Claude model for evaluation
+# Options: claude-sonnet-4-20250514 (fast/cheap), claude-opus-4-20250514 (best quality)
+claude_model: "claude-sonnet-4-20250514"
+
+# bioRxiv categories to search
+biorxiv_categories:
+  - genomics
+  - genetics
+  - bioinformatics
+
+# Genomics keywords for filtering journal papers
+# Papers matching ANY of these in title/abstract are included
+genomics_keywords:
+  - genome
+  - genomic
+  - genomics
+  - sequencing
+  - WGS
+  - whole-genome
+  - exome
+  - transcriptome
+  - transcriptomic
+  - RNA-seq
+  - scRNA-seq
+  - single-cell
+  - spatial transcriptomics
+  - epigenome
+  - epigenomic
+  - chromatin
+  - ATAC-seq
+  - ChIP-seq
+  - Hi-C
+  - methylation
+  - variant calling
+  - GWAS
+  - genome-wide
+  - population genetics
+  - phylogenomics
+  - metagenomics
+  - long-read
+  - nanopore
+  - PacBio
+  - assembly
+  - annotation
+  - pangenome
+  - structural variant
+  - copy number
+  - SNP
+  - indel
+  - multiomics
+  - multi-omics
+  - proteogenomics
+  - genome editing
+  - CRISPR screen
+  - functional genomics
+  - comparative genomics
+
+# Journal RSS feeds to monitor
+# Add or remove journals as needed
+journal_feeds:
+  # Nature series
+  Nature: "https://www.nature.com/nature.rss"
+  Nature Genetics: "https://www.nature.com/ng.rss"
+  Nature Methods: "https://www.nature.com/nmeth.rss"
+  Nature Biotechnology: "https://www.nature.com/nbt.rss"
+  Nature Communications: "https://www.nature.com/ncomms.rss"
+  Nature Reviews Genetics: "https://www.nature.com/nrg.rss"
+  # Genome Biology: RSS feed no longer available (redirects to Springer HTML)
+  Genome Research: "https://genome.cshlp.org/rss/current.xml"
+  # Science series
+  Science: "https://www.science.org/action/showFeed?type=etoc&feed=rss&jc=science"
+  Science Advances: "https://www.science.org/action/showFeed?type=etoc&feed=rss&jc=sciadv"
+  # Cell series
+  Cell: "https://www.cell.com/cell/inpress.rss"
+  Cell Genomics: "https://www.cell.com/cell-genomics/inpress.rss"
+  Molecular Cell: "https://www.cell.com/molecular-cell/inpress.rss"
+  Cell Reports: "https://www.cell.com/cell-reports/inpress.rss"
+  Cell Systems: "https://www.cell.com/cell-systems/inpress.rss"
+
+# SMTP Configuration
+# Set these via environment variables (recommended) or here directly
+smtp:
+  host: "smtp.gmail.com"   # or your institution's SMTP
+  port: 587
+  user: ""                  # override with SMTP_USER env var
+  password: ""              # override with SMTP_PASSWORD env var
