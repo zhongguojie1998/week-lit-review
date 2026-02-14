@@ -18,10 +18,9 @@ Install directly from Claude Code's interactive session:
 Once installed, trigger the pipeline in any Claude Code session:
 
 ```
-literature review
-weekly papers --days 7
-journal scan --max-papers 10
-lit review --days 3 --no-pdf
+/weekly-lit-review:weekly-lit-review --days 7
+/weekly-lit-review:weekly-lit-review --max-papers 10
+/weekly-lit-review:weekly-lit-review --days 3 --no-pdf
 ```
 
 Results are saved to `~/Desktop/Claude/week-lit-review-results/`.
