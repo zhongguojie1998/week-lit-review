@@ -25,6 +25,20 @@ Once installed, trigger the pipeline in any Claude Code session:
 
 Results are saved to `~/Desktop/Claude/week-lit-review-results/`.
 
+### Non-interactive (from terminal)
+
+Run directly from the command line without entering an interactive session:
+
+```bash
+# Defaults: 7 days, 80 papers, sonnet model
+bash scripts/run_review.sh
+
+# Customize
+bash scripts/run_review.sh --days 3 --max-papers 10
+bash scripts/run_review.sh --days 7 --model opus
+bash scripts/run_review.sh --days 7 --no-pdf
+```
+
 ## Pipeline Overview
 
 ```
@@ -127,4 +141,5 @@ weekly-lit-review/
     config.example.yaml             # Template configuration
   scripts/
     fetch_papers.py                 # Paper search & PDF download script
+    run_review.sh                   # Non-interactive bash wrapper
 ```

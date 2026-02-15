@@ -2,22 +2,21 @@
 # ==================================================
 # Copy this to config.yaml and customize as needed.
 
-# Email recipient
-recipient_email: "guojiezhong@nygenome.org"
-
 # How far back to search (in days)
 days_lookback: 7
 
 # Maximum papers to fetch per source
 max_papers_per_source: 50
 
-# Maximum papers to send through Claude evaluation
-# (controls API cost — ~$0.01-0.03 per paper with Sonnet)
+# Maximum papers to review
 max_papers_to_evaluate: 80
 
-# Claude model for evaluation
-# Options: claude-sonnet-4-20250514 (fast/cheap), claude-opus-4-20250514 (best quality)
-claude_model: "claude-sonnet-4-20250514"
+# Claude Code model for reviewing papers
+# This controls which model Claude Code uses when running the review skill.
+# Options: sonnet (fast/cheaper), opus (best quality), haiku (fastest/cheapest)
+# To use a specific model, launch Claude Code with: claude --model <model>
+# Or set in your Claude Code settings.
+claude_code_model: "sonnet"
 
 # bioRxiv categories to search
 biorxiv_categories:
@@ -93,11 +92,3 @@ journal_feeds:
   Molecular Cell: "https://www.cell.com/molecular-cell/inpress.rss"
   Cell Reports: "https://www.cell.com/cell-reports/inpress.rss"
   Cell Systems: "https://www.cell.com/cell-systems/inpress.rss"
-
-# SMTP Configuration
-# Set these via environment variables (recommended) or here directly
-smtp:
-  host: "smtp.gmail.com"   # or your institution's SMTP
-  port: 587
-  user: ""                  # override with SMTP_USER env var
-  password: ""              # override with SMTP_PASSWORD env var
