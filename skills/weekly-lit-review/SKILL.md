@@ -50,7 +50,8 @@ Note the `biorxiv_categories`, `genomics_keywords`, and `journal_feeds` lists.
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/fetch_papers.py \
   --config ${CLAUDE_PLUGIN_ROOT}/assets/config.yaml \
   --output-dir ~/Desktop/Claude/week-lit-review-results/$(date +%Y-%m-%d) \
-  $ARGUMENTS
+  $ARGUMENTS \
+  2>&1 | tee ~/Desktop/Claude/week-lit-review-results/$(date +%Y-%m-%d)/run_$(date +%Y-%m-%d_%H%M%S).log
 ```
 
 If the script succeeds, read the manifest:
