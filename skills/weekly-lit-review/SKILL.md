@@ -15,10 +15,22 @@ You are running a full literature review pipeline. Follow these steps exactly.
 
 ## Step 0: Ensure Output Directory Exists
 
-All output goes to `~/Desktop/Claude/week-lit-review-results/`. Create it if it doesn't exist:
+The output directory structure is:
+
+```
+~/Desktop/Claude/week-lit-review-results/
+├── pdfs/                    # Shared across runs — downloaded PDFs
+├── reviews/                 # Shared across runs — individual review markdown files
+└── {YYYY-MM-DD}/            # Per-run — manifest, logs, and summary
+    ├── manifest.json
+    ├── run_*.log
+    └── summary.md
+```
+
+Create the directories if they don't exist:
 
 ```bash
-mkdir -p ~/Desktop/Claude/week-lit-review-results
+mkdir -p ~/Desktop/Claude/week-lit-review-results/{pdfs,reviews,$(date +%Y-%m-%d)}
 ```
 
 ## Step 1: Read Configuration
@@ -38,13 +50,13 @@ Note the `biorxiv_categories`, `genomics_keywords`, and `journal_feeds` lists.
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/fetch_papers.py \
   --config ${CLAUDE_PLUGIN_ROOT}/assets/config.example.yaml \
-  --output-dir ~/Desktop/Claude/week-lit-review-results \
+  --output-dir ~/Desktop/Claude/week-lit-review-results/$(date +%Y-%m-%d) \
   $ARGUMENTS
 ```
 
 If the script succeeds, read the manifest:
 ```
-Read: ~/Desktop/Claude/week-lit-review-results/manifest.json
+Read: ~/Desktop/Claude/week-lit-review-results/{YYYY-MM-DD}/manifest.json
 ```
 
 ### Fallback: If the fetch script fails (network/proxy errors)
@@ -55,7 +67,7 @@ fallback approach instead:
 
 1. **Check for a pre-fetched manifest** — the user may have run the fetch script locally first:
    ```
-   Read: ~/Desktop/Claude/week-lit-review-results/manifest.json
+   Read: ~/Desktop/Claude/week-lit-review-results/{YYYY-MM-DD}/manifest.json
    ```
    If a manifest exists with papers in it, skip to Step 3.
 
@@ -72,7 +84,7 @@ fallback approach instead:
    and metadata from the paper's landing page (bioRxiv, Nature, Science, Cell, etc.).
 
 4. **Build the manifest manually.** Write a JSON file at
-   `~/Desktop/Claude/week-lit-review-results/manifest.json` with the same schema:
+   `~/Desktop/Claude/week-lit-review-results/{YYYY-MM-DD}/manifest.json` with the same schema:
    ```json
    {
      "date": "YYYY-MM-DD",
@@ -104,11 +116,15 @@ Then proceed to Step 3 as normal.
 
 For each paper in the manifest, do the following:
 
-### 3a. Read the paper
+### 3a. Check if review already exists
+
+Before reviewing, check if a review file for this paper already exists in `~/Desktop/Claude/week-lit-review-results/reviews/`. Construct the expected filename using the `{journal}-{last_name_of_first_author}-{publication_date}-{topic_keywords}.md` convention from the paper's metadata. If a matching review file exists, **skip this paper** — do not re-review it.
+
+### 3b. Read the paper
 - If `pdf_path` is non-empty, read the PDF file using the Read tool (Claude Code can read PDFs natively)
 - If `pdf_path` is empty, use the abstract from the manifest
 
-### 3b. Critically review the paper
+### 3c. Critically review the paper
 
 Act as an **expert genomics reviewer at a top-tier journal** (Nature, Science, Cell level).
 Be critical but fair. For each paper, assess:
@@ -121,7 +137,7 @@ Be critical but fair. For each paper, assess:
 6. **Inspiration for the Field**: What new directions does this open? What follow-up studies does it inspire? (2-3 sentences)
 7. **Your Own Thoughts**: Broader perspective — connections to other work, implications not discussed by authors, concerns about interpretation (2-4 sentences)
 
-### 3c. Score the paper
+### 3d. Score the paper
 
 Assign four scores on a **0-10 scale with decimal precision** (e.g., 5.1, 6.7, 8.3):
 
@@ -141,9 +157,16 @@ Assign four scores on a **0-10 scale with decimal precision** (e.g., 5.1, 6.7, 8
 
 If reviewing from abstract only (no PDF available), note this limitation and be appropriately cautious with scores.
 
-### 3d. Write individual review
+### 3e. Write individual review
 
-For each paper, write a Markdown file at `~/Desktop/Claude/week-lit-review-results/reviews/{uid}_{title_slug}.md` with this format:
+For each paper, write a Markdown file at `~/Desktop/Claude/week-lit-review-results/reviews/{journal}-{last_name_of_first_author}-{publication_date}-{topic_keywords}.md` with this format:
+
+- `{journal}`: Source journal/preprint server name, lowercase with hyphens (e.g., `nature-genetics`, `biorxiv`, `cell`, `science`)
+- `{last_name_of_first_author}`: Last name of the first author, lowercase (e.g., `zhang`, `smith`)
+- `{publication_date}`: Publication date as `YYYY-MM-DD`
+- `{topic_keywords}`: 2-4 short lowercase keywords separated by hyphens summarizing the paper topic (e.g., `single-cell-rna-seq-brain`, `gwas-diabetes-risk-loci`, `crispr-screen-enhancers`)
+
+Example filename: `nature-genetics-zhang-2026-02-10-scrna-seq-tumor-microenvironment.md`
 
 ```markdown
 # Review: {title}
@@ -194,7 +217,7 @@ For each paper, write a Markdown file at `~/Desktop/Claude/week-lit-review-resul
 
 ## Step 4: Write Summary Report
 
-After reviewing all papers, write a summary at `~/Desktop/Claude/week-lit-review-results/summary_{date}.md`:
+After reviewing all papers, write a summary at `~/Desktop/Claude/week-lit-review-results/{YYYY-MM-DD}/summary.md`:
 
 - Sort papers by overall score (highest first)
 - Include summary statistics (total papers, avg scores, how many from PDF vs abstract)
@@ -206,4 +229,5 @@ Tell the user:
 - How many papers were reviewed
 - How many from PDF vs abstract
 - The top 3-5 highest-scored papers with their titles and overall scores
-- Where the full reports are: `~/Desktop/Claude/week-lit-review-results/reviews/` and `~/Desktop/Claude/week-lit-review-results/summary_{date}.md`
+- Where the individual reviews are: `~/Desktop/Claude/week-lit-review-results/reviews/`
+- Where the summary is: `~/Desktop/Claude/week-lit-review-results/{YYYY-MM-DD}/summary.md`

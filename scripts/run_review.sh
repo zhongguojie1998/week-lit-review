@@ -11,11 +11,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CONFIG="${SCRIPT_DIR}/../assets/config.example.yaml"
+PLUGIN_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+CONFIG="${PLUGIN_DIR}/assets/config.example.yaml"
 
 # Read defaults from config.yaml if it exists, otherwise config.example.yaml
-if [[ -f "${SCRIPT_DIR}/../config.yaml" ]]; then
-    CONFIG="${SCRIPT_DIR}/../config.yaml"
+if [[ -f "${PLUGIN_DIR}/config.yaml" ]]; then
+    CONFIG="${PLUGIN_DIR}/config.yaml"
 fi
 
 # Parse values from YAML config (simple grep+awk, no dependency needed)
@@ -60,8 +61,22 @@ echo "  Days:       ${DAYS}"
 echo "  Max papers: ${MAX_PAPERS}"
 echo "  Model:      ${MODEL}"
 echo "  Extra args: ${EXTRA_ARGS:-none}"
-echo "  Output:     ~/Desktop/Claude/week-lit-review-results/"
+echo "  Output:     ~/Desktop/Claude/week-lit-review-results/$(date +%Y-%m-%d)/"
 echo "=========================================="
 echo ""
 
-claude -p "/weekly-lit-review:weekly-lit-review ${SKILL_ARGS}" --model "${MODEL}"
+BASE_DIR="$HOME/Desktop/Claude/week-lit-review-results"
+OUTPUT_DIR="${BASE_DIR}/$(date +%Y-%m-%d)"
+mkdir -p "${OUTPUT_DIR}" "${BASE_DIR}/pdfs" "${BASE_DIR}/reviews"
+LOG_FILE="${OUTPUT_DIR}/run_$(date +%Y-%m-%d_%H%M%S).log"
+
+claude -p "/weekly-lit-review:weekly-lit-review ${SKILL_ARGS}" \
+    --model "${MODEL}" \
+    --plugin-dir "${PLUGIN_DIR}" \
+    --allowedTools "Bash,Read,Write,Edit,Glob,Grep,WebSearch,WebFetch" \
+    --verbose \
+    --output-format text \
+    2>&1 | tee "${LOG_FILE}"
+
+echo ""
+echo "Log saved to: ${LOG_FILE}"

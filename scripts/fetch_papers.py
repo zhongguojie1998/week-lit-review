@@ -272,8 +272,35 @@ def try_unpaywall_pdf(doi: str, timeout: int) -> Optional[str]:
     return None
 
 
+def _make_descriptive_name(paper: dict) -> str:
+    """Build a filename stem like: nature-genetics-zhang-2026-02-10-scrna-seq-tumor."""
+    # Journal
+    source = paper.get("source", "unknown")
+    # Strip parenthetical like "bioRxiv (genomics)" -> "bioRxiv"
+    source = re.sub(r'\s*\(.*?\)', '', source)
+    journal = re.sub(r'[^a-z0-9]+', '-', source.lower()).strip('-')
+
+    # First author last name
+    authors = paper.get("authors", "")
+    first_author = authors.split(",")[0].split(";")[0].strip() if authors else "unknown"
+    # Last name is typically the last word
+    last_name = re.sub(r'[^a-z]', '', first_author.split()[-1].lower()) if first_author else "unknown"
+
+    # Date
+    pub_date = paper.get("date", "")[:10] or "unknown-date"
+
+    # Topic keywords from title: take first few meaningful words
+    title = paper.get("title", "")
+    stop_words = {"a", "an", "the", "of", "in", "for", "and", "or", "to", "with", "by", "on", "is", "are", "from", "that", "this", "its"}
+    words = [re.sub(r'[^a-z0-9]', '', w.lower()) for w in title.split()]
+    keywords = [w for w in words if w and w not in stop_words][:4]
+    topic = "-".join(keywords) if keywords else "paper"
+
+    return f"{journal}-{last_name}-{pub_date}-{topic}"
+
+
 def download_pdf(paper: dict, output_dir: Path, timeout: int, logger: logging.Logger) -> Optional[str]:
-    safe_name = re.sub(r'[^\w\-.]', '_', paper["uid"] + "_" + paper["title"][:60])
+    safe_name = _make_descriptive_name(paper)
     pdf_path = output_dir / f"{safe_name}.pdf"
 
     if pdf_path.exists() and pdf_path.stat().st_size > 1000:
@@ -321,7 +348,9 @@ def run(cfg: dict):
     logger = logging.getLogger("fetch-papers")
 
     output_dir = Path(cfg.get("output_dir", "output"))
-    pdf_dir = output_dir / "pdfs"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    # PDFs go to a shared folder alongside the date-stamped output dir
+    pdf_dir = output_dir.parent / "pdfs"
     pdf_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("=" * 60)
