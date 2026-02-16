@@ -227,30 +227,6 @@ def filter_genomics(papers: list[dict], keywords: list[str]) -> list[dict]:
 # ---------------------------------------------------------------------------
 # PDF Download
 # ---------------------------------------------------------------------------
-def try_unpaywall_pdf(doi: str, email: str, timeout: int, logger: logging.Logger) -> Optional[str]:
-    """Unpaywall: free OA PDF lookup by DOI."""
-    if not doi:
-        logger.debug("    Unpaywall: no DOI, skipping")
-        return None
-    try:
-        url = f"https://api.unpaywall.org/v2/{doi}?email={email}"
-        resp = requests.get(url, timeout=timeout)
-        if resp.status_code == 200:
-            data = resp.json()
-            oa = data.get("best_oa_location") or {}
-            pdf_url = oa.get("url_for_pdf")
-            if pdf_url:
-                logger.info(f"    Unpaywall: found OA PDF for DOI {doi}")
-            else:
-                logger.info(f"    Unpaywall: no OA PDF available for DOI {doi}")
-            return pdf_url
-        else:
-            logger.warning(f"    Unpaywall: HTTP {resp.status_code} for DOI {doi}")
-    except Exception as e:
-        logger.warning(f"    Unpaywall: error for DOI {doi}: {e}")
-    return None
-
-
 def try_semantic_scholar_pdf(doi: str, title: str, timeout: int, logger: logging.Logger) -> Optional[str]:
     """Semantic Scholar: free API, returns openAccessPdf URL if available."""
     # Try DOI first, fall back to title search
@@ -271,6 +247,14 @@ def try_semantic_scholar_pdf(doi: str, title: str, timeout: int, logger: logging
             oa_pdf = data.get("openAccessPdf") or {}
             pdf_url = oa_pdf.get("url")
             if pdf_url:
+                # If URL points to a PMC/NCBI page, route through Europe PMC (no JS challenge)
+                pmc_match = re.search(r'(PMC\d+)', pdf_url)
+                if pmc_match and ("ncbi.nlm.nih.gov" in pdf_url or "europepmc.org" in pdf_url):
+                    pdf_url = f"https://europepmc.org/backend/ptpmcrender.fcgi?accid={pmc_match.group(1)}&blobtype=pdf"
+                # If URL points to bioRxiv (likely Cloudflare-blocked), skip it
+                elif "biorxiv.org" in pdf_url:
+                    logger.info(f"    Semantic Scholar: URL is bioRxiv (Cloudflare-blocked), skipping")
+                    return None
                 logger.info(f"    Semantic Scholar: found OA PDF")
             else:
                 logger.info(f"    Semantic Scholar: no OA PDF available")
@@ -286,47 +270,38 @@ def try_semantic_scholar_pdf(doi: str, title: str, timeout: int, logger: logging
     return None
 
 
-def try_pmc_pdf(doi: str, timeout: int, logger: logging.Logger) -> Optional[str]:
-    """PubMed Central OA Service: returns PDF download URL for open-access articles."""
+def try_europepmc_pdf(doi: str, timeout: int, logger: logging.Logger) -> Optional[str]:
+    """Europe PMC: resolve DOI to PMCID via Europe PMC API, then serve PDF directly (no JS challenge)."""
     if not doi:
         return None
     try:
-        # First, resolve DOI to PMCID via NCBI ID converter
-        id_url = f"https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/?ids={doi}&format=json"
-        resp = requests.get(id_url, timeout=timeout)
+        # Search Europe PMC by DOI
+        search_url = (
+            f"https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+            f"?query=DOI:{doi}&format=json&resultType=core"
+        )
+        resp = requests.get(search_url, timeout=timeout)
         if resp.status_code != 200:
-            logger.info(f"    PMC: ID converter HTTP {resp.status_code}")
+            logger.info(f"    Europe PMC: search HTTP {resp.status_code}")
             return None
-        records = resp.json().get("records", [])
+
+        data = resp.json()
+        results = data.get("resultList", {}).get("result", [])
         pmcid = None
-        for rec in records:
+        for rec in results:
             pmcid = rec.get("pmcid")
             if pmcid:
                 break
         if not pmcid:
-            logger.info(f"    PMC: no PMCID found for DOI {doi}")
+            logger.info(f"    Europe PMC: no PMCID found for DOI {doi}")
             return None
 
-        # Query OA service for PDF link
-        oa_url = f"https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi?id={pmcid}&format=json"
-        resp = requests.get(oa_url, timeout=timeout)
-        if resp.status_code == 200:
-            data = resp.json()
-            records = data.get("records", [])
-            for rec in records:
-                href = rec.get("href", "")
-                fmt = rec.get("format", "")
-                if fmt == "pdf" or href.endswith(".pdf"):
-                    # OA service returns ftp:// URLs; convert to https://
-                    if href.startswith("ftp://"):
-                        href = href.replace("ftp://", "https://", 1)
-                    logger.info(f"    PMC: found PDF for {pmcid}")
-                    return href
-            logger.info(f"    PMC: {pmcid} found but no PDF format available")
-        else:
-            logger.warning(f"    PMC: OA service HTTP {resp.status_code}")
+        # Europe PMC serves PDFs directly without JS proof-of-work
+        pdf_url = f"https://europepmc.org/backend/ptpmcrender.fcgi?accid={pmcid}&blobtype=pdf"
+        logger.info(f"    Europe PMC: found {pmcid}")
+        return pdf_url
     except Exception as e:
-        logger.warning(f"    PMC: error: {e}")
+        logger.warning(f"    Europe PMC: error: {e}")
     return None
 
 
@@ -358,6 +333,41 @@ def try_core_pdf(doi: str, title: str, timeout: int, logger: logging.Logger) -> 
     except Exception as e:
         logger.warning(f"    CORE: error: {e}")
     return None
+
+
+def try_paperscraper_pdf(doi: str, pdf_path: Path, logger: logging.Logger) -> bool:
+    """paperscraper: uses DOI to download PDF with its own fallback chain (BioC-PMC, eLife, etc.)."""
+    if not doi:
+        return False
+    try:
+        from paperscraper.pdf import save_pdf
+    except ImportError:
+        try:
+            import subprocess
+            subprocess.check_call(
+                [sys.executable, "-m", "pip", "install", "paperscraper", "-q"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            from paperscraper.pdf import save_pdf
+        except Exception as e:
+            logger.warning(f"    paperscraper: failed to install: {e}")
+            return False
+    try:
+        save_pdf({"doi": doi}, filepath=str(pdf_path))
+        if pdf_path.exists() and pdf_path.stat().st_size > 1000:
+            logger.info(f"    paperscraper: PDF downloaded ({pdf_path.stat().st_size} bytes)")
+            return True
+        else:
+            logger.info(f"    paperscraper: no PDF retrieved for DOI {doi}")
+            # Clean up empty/tiny files
+            if pdf_path.exists():
+                pdf_path.unlink()
+            return False
+    except Exception as e:
+        logger.warning(f"    paperscraper: error: {e}")
+        if pdf_path.exists() and pdf_path.stat().st_size < 1000:
+            pdf_path.unlink()
+        return False
 
 
 def _make_descriptive_name(paper: dict) -> str:
@@ -394,7 +404,7 @@ def _make_descriptive_name(paper: dict) -> str:
     return f"{journal}-{last_name}-{pub_date}-{topic}"
 
 
-def download_pdf(paper: dict, output_dir: Path, email: str, timeout: int, logger: logging.Logger) -> Optional[str]:
+def download_pdf(paper: dict, output_dir: Path, timeout: int, logger: logging.Logger) -> Optional[str]:
     safe_name = _make_descriptive_name(paper)
     pdf_path = output_dir / f"{safe_name}.pdf"
     title_short = paper['title'][:60]
@@ -407,7 +417,7 @@ def download_pdf(paper: dict, output_dir: Path, email: str, timeout: int, logger
     title = paper.get("title", "")
 
     headers = {
-        "User-Agent": f"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 (mailto:{email})",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         "Accept": "application/pdf,text/html,*/*",
         "Accept-Language": "en-US,en;q=0.9",
     }
@@ -443,19 +453,18 @@ def download_pdf(paper: dict, output_dir: Path, email: str, timeout: int, logger
     else:
         logger.info(f"    No direct pdf_url for: {title_short}...")
 
-    # Source 2: Semantic Scholar (free, fast, aggregates many OA sources)
+    # Source 2: paperscraper (has its own fallback chain: BioC-PMC, eLife, etc.)
+    if try_paperscraper_pdf(doi, pdf_path, logger):
+        return str(pdf_path)
+
+    # Source 3: Semantic Scholar (free, aggregates many OA sources)
     s2_url = try_semantic_scholar_pdf(doi, title, timeout, logger)
     if s2_url and _try_download("semantic-scholar", s2_url):
         return str(pdf_path)
 
-    # Source 3: Unpaywall (requires valid email)
-    unpaywall_url = try_unpaywall_pdf(doi, email, timeout, logger)
-    if unpaywall_url and _try_download("unpaywall", unpaywall_url):
-        return str(pdf_path)
-
-    # Source 4: PubMed Central (great for biomedical/genomics)
-    pmc_url = try_pmc_pdf(doi, timeout, logger)
-    if pmc_url and _try_download("pmc", pmc_url):
+    # Source 4: Europe PMC (serves PDFs directly, no JS challenge)
+    europepmc_url = try_europepmc_pdf(doi, timeout, logger)
+    if europepmc_url and _try_download("europe-pmc", europepmc_url):
         return str(pdf_path)
 
     # Source 5: CORE (large OA corpus, rate-limited)
@@ -478,7 +487,6 @@ def run(cfg: dict):
     )
     logger = logging.getLogger("fetch-papers")
 
-    email = cfg.get("email", "litreview@example.com")
     output_dir = Path(cfg.get("output_dir", "output"))
     output_dir.mkdir(parents=True, exist_ok=True)
     # PDFs go to a shared folder alongside the date-stamped output dir
@@ -525,7 +533,7 @@ def run(cfg: dict):
         timeout = cfg.get("pdf_timeout", 30)
         for i, paper in enumerate(genomics):
             logger.info(f"  [{i+1}/{len(genomics)}] {paper['title'][:60]}...")
-            pdf_path = download_pdf(paper, pdf_dir, email, timeout, logger)
+            pdf_path = download_pdf(paper, pdf_dir, timeout, logger)
             paper["pdf_path"] = pdf_path or ""
             paper["review_mode"] = "pdf" if pdf_path else "abstract"
             time.sleep(0.3)
@@ -576,7 +584,6 @@ def main():
     parser.add_argument("--max-papers", type=int, help="Max papers to fetch")
     parser.add_argument("--no-pdf", action="store_true", help="Skip PDF download")
     parser.add_argument("--output-dir", default="output", help="Output directory")
-    parser.add_argument("--email", help="Email for Unpaywall API and User-Agent")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -587,8 +594,6 @@ def main():
         cfg["max_papers_to_evaluate"] = args.max_papers
     if args.no_pdf:
         cfg["download_pdfs"] = False
-    if args.email:
-        cfg["email"] = args.email
     cfg["output_dir"] = str(Path(args.output_dir).expanduser())
 
     run(cfg)

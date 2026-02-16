@@ -33,31 +33,7 @@ Create the directories if they don't exist:
 mkdir -p ~/Desktop/Claude/week-lit-review-results/{pdfs,reviews,$(date +%Y-%m-%d)}
 ```
 
-## Step 1: Check User Profile & Read Configuration
-
-### 1a. Check for user profile
-
-Check if a user profile file exists at `${CLAUDE_PLUGIN_ROOT}/user_profile.yaml`. This file stores the user's email (required for Unpaywall API and bioRxiv PDF downloads).
-
-```
-Read: ${CLAUDE_PLUGIN_ROOT}/user_profile.yaml
-```
-
-If the file **does not exist**, ask the user for their email address:
-
-> "To download PDFs from bioRxiv and open-access sources, I need an email address for the Unpaywall API. This is only stored locally in the plugin directory. What email would you like to use?"
-
-After the user provides their email, write the profile file:
-
-```yaml
-# User profile for weekly-lit-review plugin
-# This file is stored locally and never uploaded
-email: "user@example.com"
-```
-
-Save it to `${CLAUDE_PLUGIN_ROOT}/user_profile.yaml`.
-
-### 1b. Read configuration
+## Step 1: Read Configuration
 
 Read the config file to understand search parameters:
 ```
@@ -68,13 +44,12 @@ Note the `biorxiv_categories`, `genomics_keywords`, and `journal_feeds` lists.
 
 ## Step 2: Fetch Papers & Download PDFs
 
-**Try the fetch script first.** Pass the user's email (from `user_profile.yaml`) and any user arguments ($ARGUMENTS):
+**Try the fetch script first.** Pass through any user arguments ($ARGUMENTS):
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/fetch_papers.py \
   --config ${CLAUDE_PLUGIN_ROOT}/assets/config.yaml \
   --output-dir ~/Desktop/Claude/week-lit-review-results/$(date +%Y-%m-%d) \
-  --email "{email from user_profile.yaml}" \
   $ARGUMENTS
 ```
 

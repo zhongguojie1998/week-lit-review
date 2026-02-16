@@ -1,2 +1,2 @@
 .DS_store
-user_profile.yaml
+*__pycache__/
