@@ -59,55 +59,21 @@ def install_deps():
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-DEFAULT_CONFIG = {
-    "days_lookback": 7,
-    "max_papers_per_source": 50,
-    "max_papers_to_evaluate": 30,
-    "download_pdfs": True,
-    "pdf_timeout": 30,
-    "genomics_keywords": [
-        "genome", "genomic", "genomics", "sequencing", "WGS", "whole-genome",
-        "exome", "transcriptome", "transcriptomic", "RNA-seq", "scRNA-seq",
-        "single-cell", "spatial transcriptomics", "epigenome", "epigenomic",
-        "chromatin", "ATAC-seq", "ChIP-seq", "Hi-C", "methylation",
-        "variant calling", "GWAS", "genome-wide", "population genetics",
-        "phylogenomics", "metagenomics", "long-read", "nanopore",
-        "PacBio", "assembly", "annotation", "pangenome", "structural variant",
-        "copy number", "SNP", "indel", "multiomics", "multi-omics",
-        "proteogenomics", "genome editing", "CRISPR screen",
-        "functional genomics", "comparative genomics",
-    ],
-    "biorxiv_categories": ["genomics", "genetics", "bioinformatics"],
-    "journal_feeds": {
-        "Nature": "https://www.nature.com/nature.rss",
-        "Nature Genetics": "https://www.nature.com/ng.rss",
-        "Nature Methods": "https://www.nature.com/nmeth.rss",
-        "Nature Biotechnology": "https://www.nature.com/nbt.rss",
-        "Nature Communications": "https://www.nature.com/ncomms.rss",
-        "Nature Reviews Genetics": "https://www.nature.com/nrg.rss",
-        # "Genome Biology": RSS feed no longer available (redirects to Springer HTML)
-        "Genome Research": "https://genome.cshlp.org/rss/current.xml",
-        "Science": "https://www.science.org/action/showFeed?type=etoc&feed=rss&jc=science",
-        "Science Advances": "https://www.science.org/action/showFeed?type=etoc&feed=rss&jc=sciadv",
-        "Cell": "https://www.cell.com/cell/inpress.rss",
-        "Cell Genomics": "https://www.cell.com/cell-genomics/inpress.rss",
-        "Molecular Cell": "https://www.cell.com/molecular-cell/inpress.rss",
-        "Cell Reports": "https://www.cell.com/cell-reports/inpress.rss",
-        "Cell Systems": "https://www.cell.com/cell-systems/inpress.rss",
-    },
-}
+# Default config path relative to this script: ../assets/config.yaml
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_DEFAULT_CONFIG_PATH = _SCRIPT_DIR.parent / "assets" / "config.yaml"
 
 
 def load_config(config_path: Optional[str] = None) -> dict:
-    cfg = dict(DEFAULT_CONFIG)
-    if config_path and Path(config_path).exists():
-        with open(config_path) as f:
-            user_cfg = yaml_mod.safe_load(f) or {}
-        for k, v in user_cfg.items():
-            if k in cfg and isinstance(cfg[k], dict) and isinstance(v, dict):
-                cfg[k].update(v)
-            else:
-                cfg[k] = v
+    path = Path(config_path) if config_path else _DEFAULT_CONFIG_PATH
+    if not path.exists():
+        raise FileNotFoundError(f"Config file not found: {path}")
+    with open(path) as f:
+        cfg = yaml_mod.safe_load(f) or {}
+    # Ensure runtime-only defaults that aren't in the YAML
+    cfg.setdefault("download_pdfs", True)
+    cfg.setdefault("pdf_timeout", 30)
+    cfg.setdefault("max_papers_per_source", 50)
     return cfg
 
 
@@ -248,17 +214,22 @@ def fetch_journal_feeds(cfg: dict, logger: logging.Logger) -> list[dict]:
 # Genomics filter
 # ---------------------------------------------------------------------------
 def filter_genomics(papers: list[dict], keywords: list[str]) -> list[dict]:
-    return [
-        p for p in papers
-        if any(kw.lower() in f"{p['title']} {p['abstract']}".lower() for kw in keywords)
-    ]
+    result = []
+    for p in papers:
+        text = f"{p['title']} {p['abstract']}".lower()
+        matched = [kw for kw in keywords if kw.lower() in text]
+        if matched:
+            p["matched_keywords"] = matched
+            result.append(p)
+    return result
 
 
 # ---------------------------------------------------------------------------
 # PDF Download
 # ---------------------------------------------------------------------------
-def try_unpaywall_pdf(doi: str, timeout: int) -> Optional[str]:
+def try_unpaywall_pdf(doi: str, timeout: int, logger: logging.Logger) -> Optional[str]:
     if not doi:
+        logger.debug("    Unpaywall: no DOI, skipping")
         return None
     try:
         url = f"https://api.unpaywall.org/v2/{doi}?email=litreview@example.com"
@@ -266,9 +237,16 @@ def try_unpaywall_pdf(doi: str, timeout: int) -> Optional[str]:
         if resp.status_code == 200:
             data = resp.json()
             oa = data.get("best_oa_location") or {}
-            return oa.get("url_for_pdf")
-    except Exception:
-        pass
+            pdf_url = oa.get("url_for_pdf")
+            if pdf_url:
+                logger.info(f"    Unpaywall: found OA PDF for DOI {doi}")
+            else:
+                logger.info(f"    Unpaywall: no OA PDF available for DOI {doi}")
+            return pdf_url
+        else:
+            logger.warning(f"    Unpaywall: HTTP {resp.status_code} for DOI {doi}")
+    except Exception as e:
+        logger.warning(f"    Unpaywall: error for DOI {doi}: {e}")
     return None
 
 
@@ -289,12 +267,19 @@ def _make_descriptive_name(paper: dict) -> str:
     # Date
     pub_date = paper.get("date", "")[:10] or "unknown-date"
 
-    # Topic keywords from title: take first few meaningful words
-    title = paper.get("title", "")
-    stop_words = {"a", "an", "the", "of", "in", "for", "and", "or", "to", "with", "by", "on", "is", "are", "from", "that", "this", "its"}
-    words = [re.sub(r'[^a-z0-9]', '', w.lower()) for w in title.split()]
-    keywords = [w for w in words if w and w not in stop_words][:4]
-    topic = "-".join(keywords) if keywords else "paper"
+    # Topic keywords: use the genomics_keywords that matched this paper
+    matched = paper.get("matched_keywords", [])
+    # Normalize to lowercase hyphenated slugs, deduplicate, take up to 4
+    seen = set()
+    kw_slugs = []
+    for kw in matched:
+        slug = re.sub(r'[^a-z0-9]+', '-', kw.lower()).strip('-')
+        if slug and slug not in seen:
+            seen.add(slug)
+            kw_slugs.append(slug)
+        if len(kw_slugs) >= 4:
+            break
+    topic = "-".join(kw_slugs) if kw_slugs else "paper"
 
     return f"{journal}-{last_name}-{pub_date}-{topic}"
 
@@ -302,37 +287,52 @@ def _make_descriptive_name(paper: dict) -> str:
 def download_pdf(paper: dict, output_dir: Path, timeout: int, logger: logging.Logger) -> Optional[str]:
     safe_name = _make_descriptive_name(paper)
     pdf_path = output_dir / f"{safe_name}.pdf"
+    title_short = paper['title'][:60]
 
     if pdf_path.exists() and pdf_path.stat().st_size > 1000:
-        logger.info(f"    Already have: {paper['title'][:50]}...")
+        logger.info(f"    Already have PDF: {title_short}...")
         return str(pdf_path)
 
     urls_to_try = []
     if paper.get("pdf_url"):
-        urls_to_try.append(paper["pdf_url"])
+        urls_to_try.append(("direct", paper["pdf_url"]))
+    else:
+        logger.info(f"    No direct pdf_url for: {title_short}...")
 
-    unpaywall_url = try_unpaywall_pdf(paper.get("doi", ""), timeout)
+    unpaywall_url = try_unpaywall_pdf(paper.get("doi", ""), timeout, logger)
     if unpaywall_url:
-        urls_to_try.append(unpaywall_url)
+        urls_to_try.append(("unpaywall", unpaywall_url))
+
+    if not urls_to_try:
+        logger.warning(f"    No PDF URLs to try for: {title_short}...")
+        return None
 
     headers = {
         "User-Agent": "Mozilla/5.0 (compatible; LitReviewBot/1.0; mailto:litreview@example.com)",
         "Accept": "application/pdf",
     }
 
-    for url in urls_to_try:
+    for source, url in urls_to_try:
         try:
+            logger.info(f"    Trying {source}: {url[:100]}...")
             resp = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
             content_type = resp.headers.get("Content-Type", "")
             if resp.status_code == 200 and (
                 "pdf" in content_type.lower() or resp.content[:5] == b"%PDF-"
             ):
                 pdf_path.write_bytes(resp.content)
-                logger.info(f"    PDF downloaded: {paper['title'][:50]}...")
+                logger.info(f"    PDF downloaded ({source}): {title_short}... ({len(resp.content)} bytes)")
                 return str(pdf_path)
-        except Exception:
+            else:
+                logger.warning(
+                    f"    Failed ({source}): HTTP {resp.status_code}, "
+                    f"Content-Type={content_type}, body={len(resp.content)} bytes"
+                )
+        except Exception as e:
+            logger.warning(f"    Failed ({source}): {e}")
             continue
 
+    logger.warning(f"    All PDF download attempts failed for: {title_short}...")
     return None
 
 

@@ -37,9 +37,8 @@ mkdir -p ~/Desktop/Claude/week-lit-review-results/{pdfs,reviews,$(date +%Y-%m-%d
 
 Read the config file to understand search parameters:
 ```
-Read: ${CLAUDE_PLUGIN_ROOT}/assets/config.example.yaml
+Read: ${CLAUDE_PLUGIN_ROOT}/assets/config.yaml
 ```
-(If the user has a `config.yaml` at the project root, use that instead.)
 
 Note the `biorxiv_categories`, `genomics_keywords`, and `journal_feeds` lists.
 
@@ -49,7 +48,7 @@ Note the `biorxiv_categories`, `genomics_keywords`, and `journal_feeds` lists.
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/fetch_papers.py \
-  --config ${CLAUDE_PLUGIN_ROOT}/assets/config.example.yaml \
+  --config ${CLAUDE_PLUGIN_ROOT}/assets/config.yaml \
   --output-dir ~/Desktop/Claude/week-lit-review-results/$(date +%Y-%m-%d) \
   $ARGUMENTS
 ```
@@ -164,9 +163,9 @@ For each paper, write a Markdown file at `~/Desktop/Claude/week-lit-review-resul
 - `{journal}`: Source journal/preprint server name, lowercase with hyphens (e.g., `nature-genetics`, `biorxiv`, `cell`, `science`)
 - `{last_name_of_first_author}`: Last name of the first author, lowercase (e.g., `zhang`, `smith`)
 - `{publication_date}`: Publication date as `YYYY-MM-DD`
-- `{topic_keywords}`: 2-4 short lowercase keywords separated by hyphens summarizing the paper topic (e.g., `single-cell-rna-seq-brain`, `gwas-diabetes-risk-loci`, `crispr-screen-enhancers`)
+- `{topic_keywords}`: The genomics keywords (from the config's `genomics_keywords` list) that matched the paper's title/abstract, lowercase with hyphens, up to 4 keywords. Use the `matched_keywords` field from the manifest if available. (e.g., `single-cell-rna-seq-spatial-transcriptomics`, `gwas-population-genetics`, `crispr-screen-functional-genomics`)
 
-Example filename: `nature-genetics-zhang-2026-02-10-scrna-seq-tumor-microenvironment.md`
+Example filename: `nature-genetics-zhang-2026-02-10-gwas-population-genetics-snp.md`
 
 ```markdown
 # Review: {title}

@@ -49,7 +49,7 @@ bash scripts/run_review.sh --days 7 --no-pdf
 ```
 
 ### Step 1: Read Configuration
-- Loads `config.yaml` (or `config.example.yaml` as fallback)
+- Loads `assets/config.yaml`
 - Configures search parameters: lookback days, max papers, categories, keywords
 - Sets up journal RSS feed list and bioRxiv categories
 
@@ -106,7 +106,7 @@ Score guide:
 
 ## Configuration
 
-The default config is in `assets/config.example.yaml`. Key settings:
+The default config is in `assets/config.yaml`. Key settings:
 - **days_lookback**: How many days back to search (default: 7)
 - **max_papers_to_evaluate**: Max papers to review (default: 80)
 - **biorxiv_categories**: Which bioRxiv categories to search
@@ -119,12 +119,14 @@ After a run, you'll find in `~/Desktop/Claude/week-lit-review-results/`:
 
 ```
 week-lit-review-results/
-  manifest.json                    # Fetched paper metadata
-  summary_2026-02-14.md            # Ranked summary of all papers
-  reviews/
-    a1b2c3_Paper_Title.md          # Individual detailed review per paper
-  pdfs/
-    a1b2c3_Paper_Title.pdf         # Downloaded PDFs
+  pdfs/                                                        # Shared — downloaded PDFs
+    nature-genetics-zhang-2026-02-10-gwas-snp.pdf
+  reviews/                                                     # Shared — individual reviews
+    nature-genetics-zhang-2026-02-10-gwas-snp.md
+  2026-02-14/                                                  # Per-run output
+    manifest.json                                              # Fetched paper metadata
+    summary.md                                                 # Ranked summary of all papers
+    run_2026-02-14_150000.log                                  # Run log
 ```
 
 ## File Structure
@@ -138,7 +140,7 @@ weekly-lit-review/
     weekly-lit-review/
       SKILL.md                      # Skill instructions
   assets/
-    config.example.yaml             # Template configuration
+    config.yaml             # Template configuration
   scripts/
     fetch_papers.py                 # Paper search & PDF download script
     run_review.sh                   # Non-interactive bash wrapper

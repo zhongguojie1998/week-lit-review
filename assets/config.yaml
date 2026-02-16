@@ -1,6 +1,5 @@
 # Weekly Genomics Literature Review — Configuration
 # ==================================================
-# Copy this to config.yaml and customize as needed.
 
 # How far back to search (in days)
 days_lookback: 7

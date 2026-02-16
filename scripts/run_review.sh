@@ -12,12 +12,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-CONFIG="${PLUGIN_DIR}/assets/config.example.yaml"
-
-# Read defaults from config.yaml if it exists, otherwise config.example.yaml
-if [[ -f "${PLUGIN_DIR}/config.yaml" ]]; then
-    CONFIG="${PLUGIN_DIR}/config.yaml"
-fi
+CONFIG="${PLUGIN_DIR}/assets/config.yaml"
 
 # Parse values from YAML config (simple grep+awk, no dependency needed)
 read_config() {
