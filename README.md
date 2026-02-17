@@ -95,8 +95,8 @@ Score guide:
 - 0.0-2.9: Major flaws
 
 ### Step 6: Generate Report
-- Writes a detailed Markdown review per paper in `reviews/`
-- Writes a summary report ranking all papers by overall score
+- Writes a detailed HTML review per paper in `reviews/` with styled formatting
+- Writes a summary HTML report ranking all papers by overall score
 
 ## Prerequisites
 
@@ -122,10 +122,10 @@ week-lit-review-results/
   pdfs/                                                        # Shared — downloaded PDFs
     nature-genetics-zhang-2026-02-10-gwas-snp.pdf
   reviews/                                                     # Shared — individual reviews
-    nature-genetics-zhang-2026-02-10-gwas-snp.md
+    nature-genetics-zhang-2026-02-10-gwas-snp.html
   2026-02-14/                                                  # Per-run output
     manifest.json                                              # Fetched paper metadata
-    summary.md                                                 # Ranked summary of all papers
+    summary.html                                               # Ranked summary of all papers
     run_2026-02-14_150000.log                                  # Run log
 ```
 

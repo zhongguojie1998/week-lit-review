@@ -24,7 +24,7 @@ The output directory structure is:
 └── {YYYY-MM-DD}/            # Per-run — manifest, logs, and summary
     ├── manifest.json
     ├── run_*.log
-    └── summary.md
+    └── summary.html
 ```
 
 Create the directories if they don't exist:
@@ -118,7 +118,7 @@ For each paper in the manifest, do the following:
 
 ### 3a. Check if review already exists
 
-Before reviewing, check if a review file for this paper already exists in `~/Desktop/Claude/week-lit-review-results/reviews/`. Construct the expected filename using the `{journal}-{last_name_of_first_author}-{publication_date}-{topic_keywords}.md` convention from the paper's metadata. If a matching review file exists, **skip this paper** — do not re-review it.
+Before reviewing, check if a review file for this paper already exists in `~/Desktop/Claude/week-lit-review-results/reviews/`. Construct the expected filename using the `{journal}-{last_name_of_first_author}-{publication_date}-{topic_keywords}.html` convention from the paper's metadata. If a matching review file exists, **skip this paper** — do not re-review it.
 
 ### 3b. Read the paper
 - If `pdf_path` is non-empty, read the PDF file using the Read tool (Claude Code can read PDFs natively)
@@ -159,69 +159,210 @@ If reviewing from abstract only (no PDF available), note this limitation and be 
 
 ### 3e. Write individual review
 
-For each paper, write a Markdown file at `~/Desktop/Claude/week-lit-review-results/reviews/{journal}-{last_name_of_first_author}-{publication_date}-{topic_keywords}.md` with this format:
+For each paper, write an HTML file at `~/Desktop/Claude/week-lit-review-results/reviews/{journal}-{last_name_of_first_author}-{publication_date}-{topic_keywords}.html` with this format:
 
 - `{journal}`: Source journal/preprint server name, lowercase with hyphens (e.g., `nature-genetics`, `biorxiv`, `cell`, `science`)
 - `{last_name_of_first_author}`: Last name of the first author, lowercase (e.g., `zhang`, `smith`)
 - `{publication_date}`: Publication date as `YYYY-MM-DD`
 - `{topic_keywords}`: The genomics keywords (from the config's `genomics_keywords` list) that matched the paper's title/abstract, lowercase with hyphens, up to 4 keywords. Use the `matched_keywords` field from the manifest if available. (e.g., `single-cell-rna-seq-spatial-transcriptomics`, `gwas-population-genetics`, `crispr-screen-functional-genomics`)
 
-Example filename: `nature-genetics-zhang-2026-02-10-gwas-population-genetics-snp.md`
+Example filename: `nature-genetics-zhang-2026-02-10-gwas-population-genetics-snp.html`
 
-```markdown
-# Review: {title}
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Review: {title}</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 0 20px;
+            color: #333;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+        }
+        h2 {
+            color: #34495e;
+            margin-top: 30px;
+            border-left: 4px solid #3498db;
+            padding-left: 15px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #3498db;
+            color: white;
+            font-weight: 600;
+        }
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        .score-overall {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #e74c3c;
+        }
+        .metadata {
+            background: #ecf0f1;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .metadata a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        .metadata a:hover {
+            text-decoration: underline;
+        }
+        .section {
+            margin: 25px 0;
+        }
+        .review-basis {
+            display: inline-block;
+            padding: 5px 12px;
+            background: #2ecc71;
+            color: white;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        .review-basis.abstract-only {
+            background: #e67e22;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>{title}</h1>
 
-| Field | Value |
-|-------|-------|
-| **Authors** | {authors} |
-| **Source** | {source} |
-| **Date** | {date} |
-| **DOI** | {doi} |
-| **URL** | {url} |
-| **Review basis** | Full PDF / Abstract only |
+        <div class="metadata">
+            <table>
+                <tr>
+                    <th>Authors</th>
+                    <td>{authors}</td>
+                </tr>
+                <tr>
+                    <th>Source</th>
+                    <td>{source}</td>
+                </tr>
+                <tr>
+                    <th>Date</th>
+                    <td>{date}</td>
+                </tr>
+                <tr>
+                    <th>DOI</th>
+                    <td><a href="https://doi.org/{doi}" target="_blank">{doi}</a></td>
+                </tr>
+                <tr>
+                    <th>URL</th>
+                    <td><a href="{url}" target="_blank">{url}</a></td>
+                </tr>
+                <tr>
+                    <th>Review Basis</th>
+                    <td><span class="review-basis">Full PDF</span></td> <!-- or class="review-basis abstract-only">Abstract Only</span> -->
+                </tr>
+            </table>
+        </div>
 
----
+        <h2>Scores</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Dimension</th>
+                    <th>Score</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Originality</td>
+                    <td>X.X / 10</td>
+                </tr>
+                <tr>
+                    <td>Methodology</td>
+                    <td>X.X / 10</td>
+                </tr>
+                <tr>
+                    <td>Significance</td>
+                    <td>X.X / 10</td>
+                </tr>
+                <tr>
+                    <td><strong>Overall</strong></td>
+                    <td class="score-overall">X.X / 10</td>
+                </tr>
+            </tbody>
+        </table>
 
-## Scores
+        <div class="section">
+            <h2>Novelty</h2>
+            <p>{your assessment}</p>
+        </div>
 
-| Dimension | Score |
-|-----------|-------|
-| **Originality** | X.X / 10 |
-| **Methodology** | X.X / 10 |
-| **Significance** | X.X / 10 |
-| **Overall** | **X.X / 10** |
+        <div class="section">
+            <h2>Rigor</h2>
+            <p>{your assessment}</p>
+        </div>
 
----
+        <div class="section">
+            <h2>Methods</h2>
+            <p>{your assessment}</p>
+        </div>
 
-## Novelty
-{your assessment}
+        <div class="section">
+            <h2>Main Results</h2>
+            <p>{your assessment}</p>
+        </div>
 
-## Rigor
-{your assessment}
+        <div class="section">
+            <h2>Limitations</h2>
+            <p>{your assessment}</p>
+        </div>
 
-## Methods
-{your assessment}
+        <div class="section">
+            <h2>Inspiration for the Field</h2>
+            <p>{your assessment}</p>
+        </div>
 
-## Main Results
-{your assessment}
-
-## Limitations
-{your assessment}
-
-## Inspiration for the Field
-{your assessment}
-
-## Reviewer's Additional Thoughts
-{your additional perspective}
+        <div class="section">
+            <h2>Reviewer's Additional Thoughts</h2>
+            <p>{your additional perspective}</p>
+        </div>
+    </div>
+</body>
+</html>
 ```
 
 ## Step 4: Write Summary Report
 
-After reviewing all papers, write a summary at `~/Desktop/Claude/week-lit-review-results/{YYYY-MM-DD}/summary.md`:
+After reviewing all papers, write a summary at `~/Desktop/Claude/week-lit-review-results/{YYYY-MM-DD}/summary.html`:
 
 - Sort papers by overall score (highest first)
 - Include summary statistics (total papers, avg scores, how many from PDF vs abstract)
-- For each paper: title (linked), source, date, all four scores in a table, and a 1-2 sentence summary of main results
+- For each paper: title (linked to individual review HTML), source, date, all four scores in a table, and a 1-2 sentence summary of main results
+- Use a similar HTML template with proper styling for readability
 
 ## Step 5: Report to User
 
@@ -229,5 +370,5 @@ Tell the user:
 - How many papers were reviewed
 - How many from PDF vs abstract
 - The top 3-5 highest-scored papers with their titles and overall scores
-- Where the individual reviews are: `~/Desktop/Claude/week-lit-review-results/reviews/`
-- Where the summary is: `~/Desktop/Claude/week-lit-review-results/{YYYY-MM-DD}/summary.md`
+- Where the individual reviews are: `~/Desktop/Claude/week-lit-review-results/reviews/` (HTML files)
+- Where the summary is: `~/Desktop/Claude/week-lit-review-results/{YYYY-MM-DD}/summary.html`
