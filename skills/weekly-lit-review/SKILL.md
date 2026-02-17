@@ -587,92 +587,49 @@ When the user provides one or more DOIs (e.g., `--doi 10.1101/2024.05.20.594981 
 mkdir -p ~/Desktop/Claude/week-lit-review-results/{pdfs,reviews,$(date +%Y-%m-%d)}
 ```
 
-### 2. Process each DOI
+### 2. Run fetch script in DOI mode
 
-For each DOI provided, follow these steps:
-
-#### 2a. Fetch paper metadata
-
-Use Semantic Scholar API to get metadata:
+**Use the fetch script to handle all DOI fetching and PDF downloading.** Pass all DOIs to the script:
 
 ```bash
-curl -s "https://api.semanticscholar.org/graph/v1/paper/DOI:{doi}?fields=title,authors,abstract,year,venue,externalIds,openAccessPdf" | python3 -m json.tool
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/fetch_papers.py \
+  --config ${CLAUDE_PLUGIN_ROOT}/assets/config.yaml \
+  --output-dir ~/Desktop/Claude/week-lit-review-results/$(date +%Y-%m-%d) \
+  --doi {doi1} \
+  --doi {doi2} \
+  --doi {doi3} \
+  2>&1 | tee ~/Desktop/Claude/week-lit-review-results/$(date +%Y-%m-%d)/run_$(date +%Y-%m-%d_%H%M%S).log
 ```
 
-Parse the response to extract:
-- Title
-- Authors (format: "Last1, First1; Last2, First2")
-- Abstract
-- Publication date (year)
-- DOI
-- Source/venue
-- OpenAccessPdf URL (if available)
+The script will:
+- Fetch metadata from Semantic Scholar for each DOI
+- Extract genomics keywords
+- Download PDFs using the full cascade
+- Write manifest.json with all paper data
 
-If Semantic Scholar fails, try alternative approaches:
-- Use `doi.org` redirect and scrape metadata
-- Search by DOI in Europe PMC API
-- Use Crossref API: `https://api.crossref.org/works/{doi}`
+### 3. Read the manifest
 
-#### 2b. Extract genomics keywords
-
-Match the paper's title and abstract against the `genomics_keywords` from the config to determine topic keywords for the filename.
-
-#### 2c. Generate filename
-
-Use the standard naming convention:
-`{journal}-{last_name_of_first_author}-{publication_date}-{topic_keywords}.html`
-
-#### 2d. Check if review exists
-
-Check if `~/Desktop/Claude/week-lit-review-results/reviews/{filename}.html` already exists. If so, inform the user and skip this DOI (unless user explicitly requests overwrite).
-
-#### 2e. Download PDF
-
-Use Python to call the PDF download cascade from `fetch_papers.py`:
-
-```python
-import sys
-sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT}/scripts')
-from fetch_papers import install_deps, download_pdf
-install_deps()
-from pathlib import Path
-import logging
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger('doi-review')
-
-paper = {
-    'doi': '{doi}',
-    'title': '{title}',
-    'authors': '{authors}',
-    'abstract': '{abstract}',
-    'date': '{date}',
-    'source': '{source}',
-    'matched_keywords': {matched_keywords},
-    'pdf_url': '{pdf_url}' if available else ''
-}
-
-pdf_path = download_pdf(
-    paper,
-    Path('~/Desktop/Claude/week-lit-review-results/pdfs'),
-    30,  # timeout
-    logger
-)
+```
+Read: ~/Desktop/Claude/week-lit-review-results/{YYYY-MM-DD}/manifest.json
 ```
 
-#### 2f. Perform review
+### 4. Review each paper
+
+For each paper in the manifest:
+
+#### 4a. Check if review exists
+
+Check if `~/Desktop/Claude/week-lit-review-results/reviews/{filename}.html` already exists using the naming convention `{journal}-{last_name_of_first_author}-{publication_date}-{topic_keywords}.html`. If so, inform the user and skip this paper (unless user explicitly requests overwrite).
+
+#### 4b. Perform review
 
 Follow the same review steps as the batch mode (3b-3e):
 - Read the PDF or use abstract
-- Critically review
-- Score on 0-10 scale
+- Critically review (sections: Novelty, Rigor, Methods, Main Results, Limitations, Inspiration, Additional Thoughts)
+- Score on 0-10 scale (Originality, Methodology, Significance, Overall)
 - Write HTML review to `~/Desktop/Claude/week-lit-review-results/reviews/{filename}.html`
 
-### 3. Write manifest (optional)
-
-Create a manifest file at `~/Desktop/Claude/week-lit-review-results/{YYYY-MM-DD}/doi-reviews-manifest.json` with metadata for all reviewed papers.
-
-### 4. Report to user
+### 5. Report to user
 
 Tell the user:
 - Total DOIs processed
@@ -680,5 +637,5 @@ Tell the user:
   - Title and DOI
   - Whether review was from PDF or abstract
   - Overall score
-  - Path to the review
+  - Path to the review: `~/Desktop/Claude/week-lit-review-results/reviews/{filename}.html`
 - Summary: `Reviewed {N} papers from DOIs. Reviews saved to ~/Desktop/Claude/week-lit-review-results/reviews/`

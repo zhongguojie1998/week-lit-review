@@ -610,6 +610,140 @@ def run(cfg: dict):
 
 
 # ---------------------------------------------------------------------------
+# DOI-Specific Mode
+# ---------------------------------------------------------------------------
+def fetch_paper_by_doi(doi: str, logger: logging.Logger) -> Optional[dict]:
+    """Fetch paper metadata from DOI using Semantic Scholar API."""
+    try:
+        url = f"https://api.semanticscholar.org/graph/v1/paper/DOI:{doi}?fields=title,authors,abstract,year,venue,externalIds,openAccessPdf"
+        resp = requests.get(url, timeout=30)
+        if resp.status_code == 200:
+            data = resp.json()
+
+            # Extract authors
+            authors_list = data.get("authors", [])
+            authors = "; ".join([f"{a.get('name', '')}" for a in authors_list if a.get('name')])
+
+            # Extract publication date
+            year = data.get("year", "")
+            pub_date = f"{year}-01-01" if year else datetime.now().strftime("%Y-%m-%d")
+
+            # Extract source/venue
+            venue = data.get("venue", "Unknown")
+
+            # Extract OpenAccess PDF URL
+            oa_pdf = data.get("openAccessPdf") or {}
+            pdf_url = oa_pdf.get("url", "")
+
+            paper = {
+                "uid": hashlib.md5(doi.encode()).hexdigest()[:12],
+                "title": data.get("title", ""),
+                "authors": authors,
+                "abstract": data.get("abstract", ""),
+                "source": venue,
+                "url": f"https://doi.org/{doi}",
+                "doi": doi,
+                "date": pub_date,
+                "pdf_url": pdf_url,
+            }
+
+            logger.info(f"  Fetched metadata for DOI: {doi}")
+            return paper
+        elif resp.status_code == 404:
+            logger.warning(f"  DOI not found in Semantic Scholar: {doi}")
+        else:
+            logger.warning(f"  Semantic Scholar HTTP {resp.status_code} for DOI: {doi}")
+    except Exception as e:
+        logger.warning(f"  Error fetching DOI {doi}: {e}")
+    return None
+
+
+def run_doi_mode(cfg: dict, dois: list[str]):
+    """Process specific DOIs instead of batch fetching."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    logger = logging.getLogger("fetch-papers-doi")
+
+    output_dir = Path(cfg.get("output_dir", "output"))
+    output_dir.mkdir(parents=True, exist_ok=True)
+    pdf_dir = output_dir.parent / "pdfs"
+    pdf_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("=" * 60)
+    logger.info("FETCH & DOWNLOAD — DOI-Specific Mode")
+    logger.info("=" * 60)
+    logger.info(f"  Processing {len(dois)} DOI(s)")
+
+    # Step 1: Fetch metadata for each DOI
+    logger.info("\nStep 1: Fetching paper metadata from Semantic Scholar...")
+    papers = []
+    for doi in dois:
+        paper = fetch_paper_by_doi(doi, logger)
+        if paper:
+            papers.append(paper)
+        time.sleep(0.5)  # Rate limiting
+
+    if not papers:
+        logger.error("  No papers could be fetched. Exiting.")
+        return
+
+    logger.info(f"  Successfully fetched {len(papers)}/{len(dois)} papers")
+
+    # Step 2: Extract genomics keywords
+    logger.info("\nStep 2: Extracting genomics keywords...")
+    genomics_keywords = cfg.get("genomics_keywords", [])
+    for paper in papers:
+        text = f"{paper['title']} {paper['abstract']}".lower()
+        matched = [kw for kw in genomics_keywords if kw.lower() in text]
+        paper["matched_keywords"] = matched if matched else ["genomics"]
+        logger.info(f"  {paper['title'][:50]}... -> keywords: {', '.join(paper['matched_keywords'][:4])}")
+
+    # Step 3: Download PDFs
+    if cfg.get("download_pdfs", True):
+        logger.info("\nStep 3: Downloading PDFs...")
+        timeout = cfg.get("pdf_timeout", 30)
+        for i, paper in enumerate(papers):
+            logger.info(f"  [{i+1}/{len(papers)}] {paper['title'][:60]}...")
+            pdf_path = download_pdf(paper, pdf_dir, timeout, logger)
+            paper["pdf_path"] = pdf_path or ""
+            paper["review_mode"] = "pdf" if pdf_path else "abstract"
+            time.sleep(0.3)
+
+        pdf_count = sum(1 for p in papers if p.get("pdf_path"))
+        logger.info(f"  Downloaded {pdf_count}/{len(papers)} PDFs")
+    else:
+        logger.info("\nStep 3: Skipping PDF download (--no-pdf)")
+        for p in papers:
+            p["pdf_path"] = ""
+            p["review_mode"] = "abstract"
+
+    # Step 4: Write manifest
+    manifest = {
+        "date": datetime.now().strftime("%Y-%m-%d"),
+        "mode": "doi-specific",
+        "dois": dois,
+        "pdf_dir": str(pdf_dir),
+        "total_fetched": len(papers),
+        "total_pdfs": sum(1 for p in papers if p.get("pdf_path")),
+        "papers": papers,
+    }
+    manifest_path = output_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, default=str))
+
+    logger.info("\n" + "=" * 60)
+    logger.info("DOI FETCH COMPLETE")
+    logger.info(f"  Papers: {len(papers)}")
+    logger.info(f"  PDFs: {manifest['total_pdfs']}")
+    logger.info(f"  Manifest: {manifest_path}")
+    logger.info("=" * 60)
+
+    print(f"\nMANIFEST: {manifest_path}")
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 def main():
@@ -623,6 +757,7 @@ def main():
     parser.add_argument("--max-papers", type=int, help="Max papers to fetch")
     parser.add_argument("--no-pdf", action="store_true", help="Skip PDF download")
     parser.add_argument("--output-dir", default="output", help="Output directory")
+    parser.add_argument("--doi", action="append", help="DOI(s) to fetch and review (can specify multiple times)")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -635,7 +770,11 @@ def main():
         cfg["download_pdfs"] = False
     cfg["output_dir"] = str(Path(args.output_dir).expanduser())
 
-    run(cfg)
+    # If DOIs provided, run DOI-specific mode
+    if args.doi:
+        run_doi_mode(cfg, args.doi)
+    else:
+        run(cfg)
 
 
 if __name__ == "__main__":
