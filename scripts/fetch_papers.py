@@ -211,8 +211,43 @@ def fetch_journal_feeds(cfg: dict, logger: logging.Logger) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Genomics filter
+# Filters
 # ---------------------------------------------------------------------------
+def filter_non_research_articles(papers: list[dict], logger: logging.Logger) -> list[dict]:
+    """Filter out corrections, errata, retractions, and other non-research content."""
+    exclusion_patterns = [
+        r'\bauthor correction\b',
+        r'\bcorrection\b.*\b(to|for)\b',
+        r'\berratum\b',
+        r'\berrata\b',
+        r'\bretraction\b',
+        r'\bwithdrawal\b',
+        r'\bexpression of concern\b',
+        r'\bpublisher\s+correction\b',
+        r'\bpublisher\s+note\b',
+        r'\bcorrigendum\b',
+        r'\badditional information\b.*\bcorrection\b',
+    ]
+
+    compiled_patterns = [re.compile(pattern, re.IGNORECASE) for pattern in exclusion_patterns]
+
+    filtered = []
+    excluded_count = 0
+    for p in papers:
+        title = p.get("title", "")
+        # Check if title matches any exclusion pattern
+        if any(pattern.search(title) for pattern in compiled_patterns):
+            excluded_count += 1
+            logger.debug(f"  Excluded: {title[:60]}...")
+            continue
+        filtered.append(p)
+
+    if excluded_count > 0:
+        logger.info(f"  Filtered out {excluded_count} correction/erratum articles")
+
+    return filtered
+
+
 def filter_genomics(papers: list[dict], keywords: list[str]) -> list[dict]:
     result = []
     for p in papers:
@@ -509,8 +544,12 @@ def run(cfg: dict):
 
     logger.info(f"  Total fetched: {len(all_papers)}")
 
-    # Step 2: Filter
-    logger.info("\nStep 2: Filtering to genomics...")
+    # Step 2: Filter out corrections/errata
+    logger.info("\nStep 2: Filtering out corrections and errata...")
+    all_papers = filter_non_research_articles(all_papers, logger)
+
+    # Step 3: Filter to genomics
+    logger.info("\nStep 3: Filtering to genomics...")
     genomics = filter_genomics(all_papers, cfg["genomics_keywords"])
     logger.info(f"  Filtered {len(all_papers)} -> {len(genomics)} genomics papers")
 
@@ -527,9 +566,9 @@ def run(cfg: dict):
         print(f"\nMANIFEST: {manifest_path}")
         return
 
-    # Step 3: Download PDFs
+    # Step 4: Download PDFs
     if cfg.get("download_pdfs", True):
-        logger.info("\nStep 3: Downloading PDFs...")
+        logger.info("\nStep 4: Downloading PDFs...")
         timeout = cfg.get("pdf_timeout", 30)
         for i, paper in enumerate(genomics):
             logger.info(f"  [{i+1}/{len(genomics)}] {paper['title'][:60]}...")
@@ -541,12 +580,12 @@ def run(cfg: dict):
         pdf_count = sum(1 for p in genomics if p.get("pdf_path"))
         logger.info(f"  Downloaded {pdf_count}/{len(genomics)} PDFs")
     else:
-        logger.info("\nStep 3: Skipping PDF download (--no-pdf)")
+        logger.info("\nStep 4: Skipping PDF download (--no-pdf)")
         for p in genomics:
             p["pdf_path"] = ""
             p["review_mode"] = "abstract"
 
-    # Step 4: Write manifest
+    # Step 5: Write manifest
     manifest = {
         "date": datetime.now().strftime("%Y-%m-%d"),
         "days_lookback": cfg["days_lookback"],

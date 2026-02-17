@@ -6,12 +6,22 @@ description: >
   critical reviews with scores. No API key needed — works entirely within
   Claude Code. Triggers: "literature review", "weekly papers", "journal scan",
   "paper review", "genomics review", "preprint screening", "lit review".
-argument-hint: "[--days N] [--max-papers N] [--no-pdf]"
+argument-hint: "[--days N] [--max-papers N] [--no-pdf] [--doi DOI]"
 ---
 
 # Weekly Genomics Literature Review
 
 You are running a full literature review pipeline. Follow these steps exactly.
+
+## Mode Detection: Single DOI vs Batch Review
+
+Check if the user provided a DOI in the arguments (e.g., `--doi 10.1101/2024.05.20.594981` or just the DOI string).
+
+**If a DOI is provided:** Skip to **Single Paper Review Mode** (see section at the end).
+
+**Otherwise:** Continue with the standard batch review pipeline below.
+
+---
 
 ## Step 0: Ensure Output Directory Exists
 
@@ -361,8 +371,200 @@ After reviewing all papers, write a summary at `~/Desktop/Claude/week-lit-review
 
 - Sort papers by overall score (highest first)
 - Include summary statistics (total papers, avg scores, how many from PDF vs abstract)
-- For each paper: title (linked to individual review HTML), source, date, all four scores in a table, and a 1-2 sentence summary of main results
-- Use a similar HTML template with proper styling for readability
+- For each paper: title (linked to individual review HTML in `../reviews/` directory), source, date, all four scores in a table, and a 1-2 sentence summary of main results
+
+Use this HTML template:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Literature Review Summary - {YYYY-MM-DD}</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 0 20px;
+            color: #333;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+        }
+        .stats {
+            background: #ecf0f1;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 30px 0;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+        .stat-item {
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #3498db;
+        }
+        .stat-label {
+            color: #7f8c8d;
+            font-size: 0.9em;
+        }
+        .paper-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            transition: box-shadow 0.3s;
+        }
+        .paper-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .paper-title {
+            font-size: 1.3em;
+            margin-bottom: 10px;
+        }
+        .paper-title a {
+            color: #2c3e50;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .paper-title a:hover {
+            color: #3498db;
+        }
+        .paper-meta {
+            color: #7f8c8d;
+            font-size: 0.9em;
+            margin: 10px 0;
+        }
+        .scores {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin: 15px 0;
+        }
+        .score-item {
+            text-align: center;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+        .score-label {
+            font-size: 0.8em;
+            color: #7f8c8d;
+            margin-bottom: 5px;
+        }
+        .score-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .score-overall {
+            background: #3498db;
+            color: white;
+        }
+        .score-overall .score-label {
+            color: #ecf0f1;
+        }
+        .score-overall .score-value {
+            color: white;
+        }
+        .paper-summary {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-left: 4px solid #3498db;
+            font-style: italic;
+        }
+        .rank {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            line-height: 40px;
+            text-align: center;
+            border-radius: 50%;
+            background: #3498db;
+            color: white;
+            font-weight: bold;
+            margin-right: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Literature Review Summary - {YYYY-MM-DD}</h1>
+
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-value">{total_papers}</div>
+                <div class="stat-label">Total Papers Reviewed</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">{pdf_count}</div>
+                <div class="stat-label">Full PDF Reviews</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">{abstract_count}</div>
+                <div class="stat-label">Abstract-Only Reviews</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">{avg_score}</div>
+                <div class="stat-label">Average Overall Score</div>
+            </div>
+        </div>
+
+        <!-- Repeat for each paper -->
+        <div class="paper-card">
+            <div class="paper-title">
+                <span class="rank">1</span>
+                <a href="../reviews/{filename}.html" target="_blank">{title}</a>
+            </div>
+            <div class="paper-meta">
+                <strong>Source:</strong> {source} | <strong>Date:</strong> {date} | <strong>Authors:</strong> {authors}
+            </div>
+            <div class="scores">
+                <div class="score-item">
+                    <div class="score-label">Originality</div>
+                    <div class="score-value">X.X</div>
+                </div>
+                <div class="score-item">
+                    <div class="score-label">Methodology</div>
+                    <div class="score-value">X.X</div>
+                </div>
+                <div class="score-item">
+                    <div class="score-label">Significance</div>
+                    <div class="score-value">X.X</div>
+                </div>
+                <div class="score-item score-overall">
+                    <div class="score-label">Overall</div>
+                    <div class="score-value">X.X</div>
+                </div>
+            </div>
+            <div class="paper-summary">
+                {1-2 sentence summary of main results}
+            </div>
+        </div>
+        <!-- End repeat -->
+
+    </div>
+</body>
+</html>
+```
 
 ## Step 5: Report to User
 
@@ -372,3 +574,77 @@ Tell the user:
 - The top 3-5 highest-scored papers with their titles and overall scores
 - Where the individual reviews are: `~/Desktop/Claude/week-lit-review-results/reviews/` (HTML files)
 - Where the summary is: `~/Desktop/Claude/week-lit-review-results/{YYYY-MM-DD}/summary.html`
+
+---
+
+## Single Paper Review Mode
+
+When the user provides a single DOI (e.g., `--doi 10.1101/2024.05.20.594981` or just the DOI string):
+
+### 1. Create output directories
+
+```bash
+mkdir -p ~/Desktop/Claude/week-lit-review-results/{pdfs,reviews}
+```
+
+### 2. Fetch paper metadata
+
+Use Semantic Scholar API to get metadata:
+
+```bash
+curl -s "https://api.semanticscholar.org/graph/v1/paper/DOI:{doi}?fields=title,authors,abstract,year,venue,externalIds,openAccessPdf" | python3 -m json.tool
+```
+
+Parse the response to extract:
+- Title
+- Authors (format: "Last1, First1; Last2, First2")
+- Abstract
+- Publication date (year)
+- DOI
+- Source/venue
+- OpenAccessPdf URL (if available)
+
+### 3. Download PDF
+
+Try to download the PDF using the fetch script's download cascade:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/fetch_papers.py \
+  --config ${CLAUDE_PLUGIN_ROOT}/assets/config.yaml \
+  --output-dir ~/Desktop/Claude/week-lit-review-results/single-reviews \
+  --days 3650 \
+  --max-papers 1
+```
+
+Or manually construct a paper dict and call the download function directly via a Python snippet that imports from `fetch_papers.py`.
+
+Alternatively, if you have the DOI, construct a temporary manifest with just this one paper and use the standard PDF download logic.
+
+### 4. Extract genomics keywords
+
+Match the paper's title and abstract against the `genomics_keywords` from the config to determine topic keywords for the filename.
+
+### 5. Generate filename
+
+Use the standard naming convention:
+`{journal}-{last_name_of_first_author}-{publication_date}-{topic_keywords}.html`
+
+### 6. Check if review exists
+
+Check if `~/Desktop/Claude/week-lit-review-results/reviews/{filename}.html` already exists. If so, inform the user and ask if they want to overwrite.
+
+### 7. Perform review
+
+Follow the same review steps as the batch mode (3b-3e):
+- Read the PDF or use abstract
+- Critically review
+- Score on 0-10 scale
+- Write HTML review to `~/Desktop/Claude/week-lit-review-results/reviews/{filename}.html`
+
+### 8. Report to user
+
+Tell the user:
+- Paper title and DOI
+- Whether review was from PDF or abstract
+- Overall score
+- Path to the review: `~/Desktop/Claude/week-lit-review-results/reviews/{filename}.html`
