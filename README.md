@@ -31,7 +31,7 @@ Finally, install directly from Claude Code's interactive session:
 
 Once installed, trigger the pipeline in any Claude Code session:
 
-**Note**: It will consume the tokens depending on the model you select. I recommend using `/model haiku` command first to set it to the lightest model before running the command.
+**Note**: It will consume tokens at the speed depending on the model you select. I recommend using `/model haiku` command first to set it to the lightest model before running the command.
 
 ```
 /weekly-lit-review:weekly-lit-review --days 7
@@ -41,7 +41,7 @@ Once installed, trigger the pipeline in any Claude Code session:
 
 Results are saved to `~/Desktop/Claude/week-lit-review-results/`.
 
-### Non-interactive (from terminal)
+### Non-interactive (from terminal, experimental)
 
 Run directly from the command line without entering an interactive session:
 
