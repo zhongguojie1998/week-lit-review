@@ -114,6 +114,9 @@ Score guide:
 - Writes a detailed HTML review per paper in `reviews/` with styled formatting
 - Writes a summary HTML report ranking all papers by overall score
 
+### Features to add
+- Let the model read abstract and discussion first, do an initial score of the paper. Then proceed to comprehensive review if it passed certain criteria. 
+
 ## Prerequisites
 
 1. **Python 3.10+** installed
