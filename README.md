@@ -6,7 +6,21 @@ Automated pipeline that searches bioRxiv and top genomics journals, downloads fu
 
 ## Installation
 
-Install directly from Claude Code's interactive session:
+First, install Claude Code in terminal using the following command (for details, refer to https://code.claude.com/docs/en/setup#installation)
+
+```
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+Next, start an interactive session of Claude Code
+
+```
+claude
+```
+
+For the step `Select login method`, Select `Claude account with subscription`, then it will automatically ask for account credentials and jump to the browser.
+
+Finally, install directly from Claude Code's interactive session:
 
 ```
 /plugin marketplace add zhongguojie1998/weekly-lit-review
@@ -16,6 +30,8 @@ Install directly from Claude Code's interactive session:
 ## Usage
 
 Once installed, trigger the pipeline in any Claude Code session:
+
+**Note**: It will consume the tokens depending on the model you select. I recommend using `/model haiku` command first to set it to the lightest model before running the command.
 
 ```
 /weekly-lit-review:weekly-lit-review --days 7
