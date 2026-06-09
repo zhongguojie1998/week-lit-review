@@ -7,5 +7,12 @@
   },
   "license": "MIT",
   "keywords": ["genomics", "literature-review", "bioRxiv", "pdf-review"],
-  "repository": "https://github.com/zhongguojie1998/weekly-lit-review"
+  "repository": "https://github.com/zhongguojie1998/weekly-lit-review",
+  "mcpServers": {
+    "bioRxiv": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "--quiet", "${CLAUDE_PLUGIN_ROOT}/scripts/biorxiv_mcp.py"]
+    }
+  }
 }

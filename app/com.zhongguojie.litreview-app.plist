@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.zhongguojie.litreview-app</string>
+
+    <!-- Resident menu-bar app: start at login, keep running. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/guojiezhong/Desktop.personal/Claude/week-lit-review/app/run_app.sh</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/guojiezhong/Desktop/Claude/week-lit-review-results/app.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/guojiezhong/Desktop/Claude/week-lit-review-results/app.err.log</string>
+</dict>
+</plist>

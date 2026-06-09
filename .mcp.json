@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "bioRxiv": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "--quiet",
+        "${CLAUDE_PROJECT_DIR}/scripts/biorxiv_mcp.py"
+      ]
+    }
+  }
+}

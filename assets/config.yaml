@@ -17,6 +17,12 @@ max_papers_to_evaluate: 80
 # Or set in your Claude Code settings.
 claude_code_model: "sonnet"
 
+# Review engine used by the menu-bar app: "claude" (Claude Code) or "codex" (OpenAI
+# Codex CLI). The app's "Review engine" menu overrides this per session.
+review_engine: "claude"
+# Model for the Codex engine. Leave blank to use Codex's own default model.
+codex_model: ""
+
 # bioRxiv categories to search
 biorxiv_categories:
   - genomics

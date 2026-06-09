@@ -95,6 +95,7 @@ def fetch_biorxiv(cfg: dict, logger: logging.Logger) -> list[dict]:
             url = (
                 f"https://api.biorxiv.org/details/biorxiv/"
                 f"{start_date}/{end_date}/{cursor}/json"
+                f"?category={requests.utils.quote(cat)}"
             )
             try:
                 resp = requests.get(url, timeout=30)
@@ -121,6 +122,8 @@ def fetch_biorxiv(cfg: dict, logger: logging.Logger) -> list[dict]:
                             "uid": uid,
                             "title": title,
                             "authors": item.get("authors", ""),
+                            "corresponding_author": item.get("author_corresponding", ""),
+                            "affiliation": item.get("author_corresponding_institution", ""),
                             "abstract": abstract,
                             "source": f"bioRxiv ({item_cat})",
                             "url": f"https://doi.org/{doi}",
@@ -130,7 +133,7 @@ def fetch_biorxiv(cfg: dict, logger: logging.Logger) -> list[dict]:
                         })
 
             cursor += len(collection)
-            if len(collection) < 30:
+            if len(collection) < 100:
                 break
             time.sleep(0.5)
 
@@ -195,6 +198,8 @@ def fetch_journal_feeds(cfg: dict, logger: logging.Logger) -> list[dict]:
                     "uid": uid,
                     "title": title,
                     "authors": authors if isinstance(authors, str) else ", ".join(authors) if isinstance(authors, list) else "",
+                    "corresponding_author": "",  # not exposed in RSS feeds
+                    "affiliation": "",           # not exposed in RSS feeds
                     "abstract": abstract,
                     "source": journal_name,
                     "url": link,
@@ -305,10 +310,11 @@ def try_semantic_scholar_pdf(doi: str, title: str, timeout: int, logger: logging
     return None
 
 
-def try_europepmc_pdf(doi: str, timeout: int, logger: logging.Logger) -> Optional[str]:
-    """Europe PMC: resolve DOI to PMCID via Europe PMC API, then serve PDF directly (no JS challenge)."""
+def try_europepmc_pdf(doi: str, timeout: int, logger: logging.Logger) -> tuple[Optional[str], Optional[str]]:
+    """Europe PMC: resolve DOI to PMCID via Europe PMC API, then serve PDF directly (no JS challenge).
+    Returns (pdf_url, pmcid) or (None, None)."""
     if not doi:
-        return None
+        return None, None
     try:
         # Search Europe PMC by DOI
         search_url = (
@@ -318,7 +324,7 @@ def try_europepmc_pdf(doi: str, timeout: int, logger: logging.Logger) -> Optiona
         resp = requests.get(search_url, timeout=timeout)
         if resp.status_code != 200:
             logger.info(f"    Europe PMC: search HTTP {resp.status_code}")
-            return None
+            return None, None
 
         data = resp.json()
         results = data.get("resultList", {}).get("result", [])
@@ -329,15 +335,15 @@ def try_europepmc_pdf(doi: str, timeout: int, logger: logging.Logger) -> Optiona
                 break
         if not pmcid:
             logger.info(f"    Europe PMC: no PMCID found for DOI {doi}")
-            return None
+            return None, None
 
         # Europe PMC serves PDFs directly without JS proof-of-work
         pdf_url = f"https://europepmc.org/backend/ptpmcrender.fcgi?accid={pmcid}&blobtype=pdf"
         logger.info(f"    Europe PMC: found {pmcid}")
-        return pdf_url
+        return pdf_url, pmcid
     except Exception as e:
         logger.warning(f"    Europe PMC: error: {e}")
-    return None
+    return None, None
 
 
 def try_core_pdf(doi: str, title: str, timeout: int, logger: logging.Logger) -> Optional[str]:
@@ -405,6 +411,196 @@ def try_paperscraper_pdf(doi: str, pdf_path: Path, logger: logging.Logger) -> bo
         return False
 
 
+def try_biorxiv_api_format(doi: str, fmt: str, name: str, output_dir: Path, timeout: int, logger: logging.Logger) -> Optional[tuple]:
+    """Fetch bioRxiv API response in 'json' or 'xml' format. Returns (path, ext) or None."""
+    url = f"https://api.biorxiv.org/details/biorxiv/{doi}/na/{fmt}"
+    try:
+        resp = requests.get(url, timeout=timeout)
+        if resp.status_code == 200:
+            if fmt == "json":
+                data = resp.json().get("collection", [])
+                if data:
+                    path = output_dir / f"{name}.json"
+                    path.write_text(json.dumps(data[0], indent=2))
+                    logger.info(f"    bioRxiv API JSON: saved metadata ({path.stat().st_size} bytes)")
+                    return str(path), "json"
+            elif fmt == "xml":
+                if len(resp.content) > 500:
+                    path = output_dir / f"{name}.xml"
+                    path.write_bytes(resp.content)
+                    logger.info(f"    bioRxiv API XML: saved ({path.stat().st_size} bytes)")
+                    return str(path), "xml"
+    except Exception as e:
+        logger.warning(f"    bioRxiv API {fmt}: error: {e}")
+    return None
+
+
+def try_europepmc_xml(pmcid: str, name: str, output_dir: Path, timeout: int, logger: logging.Logger) -> Optional[tuple]:
+    """Fetch JATS XML for a PMC article. Returns (path, ext) or None."""
+    url = (
+        f"https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+        f"?query=PMCID:{pmcid}&format=xml&resultType=full"
+    )
+    try:
+        resp = requests.get(url, timeout=timeout)
+        if resp.status_code == 200 and len(resp.content) > 1000:
+            path = output_dir / f"{name}.xml"
+            path.write_bytes(resp.content)
+            logger.info(f"    Europe PMC XML: saved ({path.stat().st_size} bytes)")
+            return str(path), "xml"
+    except Exception as e:
+        logger.warning(f"    Europe PMC XML: error: {e}")
+    return None
+
+
+def try_fetch_text(paper_url: str, name: str, output_dir: Path, timeout: int, headers: dict, logger: logging.Logger) -> Optional[tuple]:
+    """Fetch HTML from paper URL, strip tags, save as .txt. Returns (path, ext) or None."""
+    if not paper_url:
+        return None
+    try:
+        resp = requests.get(paper_url, headers=headers, timeout=timeout)
+        if resp.status_code == 200:
+            text = re.sub(r"<[^>]+>", " ", resp.text)
+            text = re.sub(r"\s+", " ", text).strip()
+            if len(text) > 500:
+                path = output_dir / f"{name}.txt"
+                path.write_text(text[:500_000], encoding="utf-8", errors="ignore")
+                logger.info(f"    HTML-to-text: saved ({path.stat().st_size} bytes)")
+                return str(path), "txt"
+    except Exception as e:
+        logger.warning(f"    HTML-to-text: error: {e}")
+    return None
+
+
+_BROWSER_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+
+
+def try_browser_pdf(doi: str, pdf_url_hint: str, source: str, pdf_path: Path,
+                    timeout: int, logger: logging.Logger) -> bool:
+    """Download a bioRxiv/medRxiv PDF via a real browser (Playwright + the system
+    Chrome). bioRxiv fronts every request with a Cloudflare challenge that blocks
+    plain HTTP (and cloudscraper/paperscraper), but a real browser clears it.
+    Uses channel="chrome" so no Chromium download is needed. Returns True on success.
+    """
+    if not doi:
+        return False
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        import subprocess
+        installed = False
+        for extra in ([], ["--user"], ["--break-system-packages"]):
+            try:
+                subprocess.check_call(
+                    [sys.executable, "-m", "pip", "install", "-q", "playwright", *extra],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                )
+                installed = True
+                break
+            except Exception:
+                continue
+        if not installed:
+            logger.warning("    browser-pdf: playwright not available and install failed")
+            return False
+        try:
+            from playwright.sync_api import sync_playwright
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"    browser-pdf: playwright import failed: {e}")
+            return False
+
+    host = "www.medrxiv.org" if ("medrxiv" in (source or "").lower()
+                                 or "medrxiv" in (pdf_url_hint or "").lower()) else "www.biorxiv.org"
+    versions: list[str] = []
+    m = re.search(r"v(\d+)", pdf_url_hint or "")
+    if m:
+        versions.append(f"v{m.group(1)}")
+    for v in ("v1", "v2", "v3"):
+        if v not in versions:
+            versions.append(v)
+
+    ms = max(timeout, 60) * 1000
+
+    def _cleared(page, ctx) -> bool:
+        """Cloudflare challenge solved? The cf_clearance cookie is the reliable
+        signal; fall back to the page title no longer being a challenge page."""
+        try:
+            if any(c.get("name") == "cf_clearance" for c in ctx.cookies()):
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+        t = (page.title() or "").lower()
+        return bool(t) and "just a moment" not in t and "attention required" not in t
+
+    try:
+        with sync_playwright() as p:
+            try:
+                # --disable-blink-features=AutomationControlled lowers the chance
+                # Cloudflare flags the headless browser and serves an unsolvable loop.
+                browser = p.chromium.launch(
+                    channel="chrome", headless=True,
+                    args=["--disable-blink-features=AutomationControlled"])
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"    browser-pdf: chrome launch failed ({repr(e)[:80]})")
+                return False
+            try:
+                ctx = browser.new_context(accept_downloads=True, user_agent=_BROWSER_UA)
+                page = ctx.new_page()
+                # Fetch the PDF from *inside* the page (same-origin fetch carries the
+                # full browser fingerprint + cf_clearance cookie). A lightweight
+                # APIRequestContext.get() gets re-challenged by Cloudflare; in-page
+                # fetch does not, once the article page has cleared the challenge.
+                fetch_js = """async (url) => {
+                    const r = await fetch(url, {credentials: 'include'});
+                    if (!r.ok) return {ok: false, status: r.status};
+                    const buf = await r.arrayBuffer();
+                    const bytes = new Uint8Array(buf);
+                    let bin = '';
+                    const CHUNK = 0x8000;
+                    for (let i = 0; i < bytes.length; i += CHUNK) {
+                        bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+                    }
+                    return {ok: true, status: r.status, b64: btoa(bin)};
+                }"""
+                import base64
+                for v in versions:
+                    art = f"https://{host}/content/{doi}{v}"
+                    try:
+                        # Up to 2 navigations: a transient challenge sometimes clears
+                        # only on a reload. Don't gate on goto status — the challenge
+                        # page returns 403 first, then the browser clears it.
+                        cleared = False
+                        for attempt in range(2):
+                            page.goto(art, wait_until="domcontentloaded", timeout=ms)
+                            for _ in range(40):  # wait up to ~40s for Cloudflare
+                                if _cleared(page, ctx):
+                                    cleared = True
+                                    break
+                                page.wait_for_timeout(1000)
+                            if cleared:
+                                break
+                        res = page.evaluate(fetch_js, art + ".full.pdf")
+                        if res and res.get("ok") and res.get("b64"):
+                            body = base64.b64decode(res["b64"])
+                            if body[:5] == b"%PDF-" and len(body) > 1000:
+                                pdf_path.write_bytes(body)
+                                logger.info(f"    browser-pdf: downloaded {len(body)} bytes from {art}.full.pdf")
+                                return True
+                        logger.info(f"    browser-pdf: {v} no PDF "
+                                    f"({(res or {}).get('status')}, cleared={cleared})")
+                    except Exception as e:  # noqa: BLE001
+                        logger.warning(f"    browser-pdf: {v} error {repr(e)[:80]}")
+                        continue
+                return False
+            finally:
+                browser.close()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"    browser-pdf: error {repr(e)[:120]}")
+        return False
+
+
 def _make_descriptive_name(paper: dict) -> str:
     """Build a filename stem like: nature-genetics-zhang-2026-02-10-scrna-seq-tumor."""
     # Journal
@@ -439,17 +635,53 @@ def _make_descriptive_name(paper: dict) -> str:
     return f"{journal}-{last_name}-{pub_date}-{topic}"
 
 
-def download_pdf(paper: dict, output_dir: Path, timeout: int, logger: logging.Logger) -> Optional[str]:
+# Unpaywall just needs a contact email (any well-formed address); override in config.
+_UNPAYWALL_EMAIL = "weekly-lit-review@users.noreply.github.com"
+
+
+def try_unpaywall_pdf(doi: str, timeout: int, logger: logging.Logger) -> Optional[str]:
+    """Find an open-access PDF URL for the DOI via Unpaywall. Returns a URL or None.
+
+    Unpaywall indexes legal OA copies across publishers/repositories; many sit on
+    hosts reachable by plain HTTP (unlike Cloudflare-fronted bioRxiv).
+    """
+    if not doi:
+        return None
+    try:
+        resp = requests.get(f"https://api.unpaywall.org/v2/{doi}",
+                            params={"email": _UNPAYWALL_EMAIL}, timeout=timeout)
+        if resp.status_code != 200:
+            logger.info(f"    Unpaywall: HTTP {resp.status_code}")
+            return None
+        data = resp.json()
+        candidates = [data.get("best_oa_location") or {}]
+        candidates += data.get("oa_locations", []) or []
+        for loc in candidates:
+            url = (loc or {}).get("url_for_pdf")
+            if url:
+                logger.info("    Unpaywall: OA PDF found")
+                return url
+        logger.info("    Unpaywall: no OA PDF")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"    Unpaywall error: {repr(e)[:80]}")
+    return None
+
+
+def download_source(paper: dict, output_dir: Path, timeout: int, logger: logging.Logger) -> tuple[Optional[str], Optional[str]]:
+    """Download paper in any available format. Returns (file_path, format_ext) or (None, None)."""
     safe_name = _make_descriptive_name(paper)
-    pdf_path = output_dir / f"{safe_name}.pdf"
     title_short = paper['title'][:60]
 
-    if pdf_path.exists() and pdf_path.stat().st_size > 1000:
-        logger.info(f"    Already have PDF: {title_short}...")
-        return str(pdf_path)
+    # Skip if any format already exists
+    for ext in (".pdf", ".json", ".xml", ".txt"):
+        existing = output_dir / f"{safe_name}{ext}"
+        if existing.exists() and existing.stat().st_size > 1000:
+            logger.info(f"    Already have source file ({ext[1:]}): {title_short}...")
+            return str(existing), ext[1:]
 
     doi = paper.get("doi", "")
     title = paper.get("title", "")
+    paper_url = paper.get("url", "")
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -457,7 +689,9 @@ def download_pdf(paper: dict, output_dir: Path, timeout: int, logger: logging.Lo
         "Accept-Language": "en-US,en;q=0.9",
     }
 
-    def _try_download(source: str, url: str) -> bool:
+    pdf_path = output_dir / f"{safe_name}.pdf"
+
+    def _try_download_pdf(source: str, url: str) -> bool:
         """Attempt to download a PDF from url. Returns True on success."""
         try:
             logger.info(f"    Trying {source}: {url[:100]}...")
@@ -478,37 +712,120 @@ def download_pdf(paper: dict, output_dir: Path, timeout: int, logger: logging.Lo
             logger.warning(f"    Failed ({source}): {e}")
         return False
 
-    # PDF source cascade — try each source in order, stop on first success.
-    # Each step: (1) resolve the PDF URL via API, (2) attempt download.
+    src_l = paper.get("source", "").lower()
+    url_l = paper_url.lower()
+    is_biorxiv = (
+        doi.startswith("10.1101") or doi.startswith("10.64898")
+        or "biorxiv" in src_l or "medrxiv" in src_l
+        or "biorxiv.org" in url_l or "medrxiv.org" in url_l
+    )
 
-    # Source 1: Direct PDF URL (bioRxiv papers have this)
-    if paper.get("pdf_url"):
-        if _try_download("direct", paper["pdf_url"]):
-            return str(pdf_path)
+    if is_biorxiv:
+        # bioRxiv cascade. Prefer the FULL PDF; only fall back to abstract-only
+        # API metadata as a last resort (otherwise reviews silently degrade).
+
+        # Source 1: Direct PDF URL (cheap; usually Cloudflare-blocked but worth a shot)
+        if paper.get("pdf_url"):
+            if _try_download_pdf("direct", paper["pdf_url"]):
+                return str(pdf_path), "pdf"
+        else:
+            logger.info(f"    No direct pdf_url for: {title_short}...")
+
+        # Source 2: Real browser (Playwright + Chrome) — clears Cloudflare, gets the PDF
+        if try_browser_pdf(doi, paper.get("pdf_url", ""), paper.get("source", ""),
+                           pdf_path, timeout, logger):
+            return str(pdf_path), "pdf"
+
+        # Source 3: paperscraper
+        if try_paperscraper_pdf(doi, pdf_path, logger):
+            return str(pdf_path), "pdf"
+
+        # Source 4: Semantic Scholar
+        s2_url = try_semantic_scholar_pdf(doi, title, timeout, logger)
+        if s2_url and _try_download_pdf("semantic-scholar", s2_url):
+            return str(pdf_path), "pdf"
+
+        # Source 5: Europe PMC
+        europepmc_url, _ = try_europepmc_pdf(doi, timeout, logger)
+        if europepmc_url and _try_download_pdf("europe-pmc", europepmc_url):
+            return str(pdf_path), "pdf"
+
+        # Source 6: CORE
+        core_url = try_core_pdf(doi, title, timeout, logger)
+        if core_url and _try_download_pdf("core", core_url):
+            return str(pdf_path), "pdf"
+
+        # Source 7: Unpaywall (a non-Cloudflare OA mirror may exist)
+        unpaywall_url = try_unpaywall_pdf(doi, timeout, logger)
+        if unpaywall_url and _try_download_pdf("unpaywall", unpaywall_url):
+            return str(pdf_path), "pdf"
+
+        # --- abstract-only fallbacks (only if no full text could be retrieved) ---
+
+        # Source 7: bioRxiv API JSON metadata (abstract only)
+        if doi:
+            result = try_biorxiv_api_format(doi, "json", safe_name, output_dir, timeout, logger)
+            if result:
+                return result
+
+        # Source 8: bioRxiv API XML
+        if doi:
+            result = try_biorxiv_api_format(doi, "xml", safe_name, output_dir, timeout, logger)
+            if result:
+                return result
+
+        # Source 9: HTML-to-text fallback
+        result = try_fetch_text(paper_url, safe_name, output_dir, timeout, headers, logger)
+        if result:
+            return result
+
     else:
-        logger.info(f"    No direct pdf_url for: {title_short}...")
+        # Non-bioRxiv cascade
 
-    # Source 2: paperscraper (has its own fallback chain: BioC-PMC, eLife, etc.)
-    if try_paperscraper_pdf(doi, pdf_path, logger):
-        return str(pdf_path)
+        # Source 1: Direct PDF URL if provided
+        if paper.get("pdf_url"):
+            if _try_download_pdf("direct", paper["pdf_url"]):
+                return str(pdf_path), "pdf"
+        else:
+            logger.info(f"    No direct pdf_url for: {title_short}...")
 
-    # Source 3: Semantic Scholar (free, aggregates many OA sources)
-    s2_url = try_semantic_scholar_pdf(doi, title, timeout, logger)
-    if s2_url and _try_download("semantic-scholar", s2_url):
-        return str(pdf_path)
+        # Source 2: paperscraper
+        if try_paperscraper_pdf(doi, pdf_path, logger):
+            return str(pdf_path), "pdf"
 
-    # Source 4: Europe PMC (serves PDFs directly, no JS challenge)
-    europepmc_url = try_europepmc_pdf(doi, timeout, logger)
-    if europepmc_url and _try_download("europe-pmc", europepmc_url):
-        return str(pdf_path)
+        # Source 3: Semantic Scholar
+        s2_url = try_semantic_scholar_pdf(doi, title, timeout, logger)
+        if s2_url and _try_download_pdf("semantic-scholar", s2_url):
+            return str(pdf_path), "pdf"
 
-    # Source 5: CORE (large OA corpus, rate-limited)
-    core_url = try_core_pdf(doi, title, timeout, logger)
-    if core_url and _try_download("core", core_url):
-        return str(pdf_path)
+        # Source 4: Unpaywall OA PDF (broad cross-publisher coverage)
+        unpaywall_url = try_unpaywall_pdf(doi, timeout, logger)
+        if unpaywall_url and _try_download_pdf("unpaywall", unpaywall_url):
+            return str(pdf_path), "pdf"
 
-    logger.warning(f"    All 5 PDF sources exhausted for: {title_short}...")
-    return None
+        # Source 5: Europe PMC PDF (and save PMCID for XML fallback)
+        europepmc_url, pmcid = try_europepmc_pdf(doi, timeout, logger)
+        if europepmc_url and _try_download_pdf("europe-pmc", europepmc_url):
+            return str(pdf_path), "pdf"
+
+        # Source 6: Europe PMC JATS XML (reuse PMCID from step 5)
+        if pmcid:
+            result = try_europepmc_xml(pmcid, safe_name, output_dir, timeout, logger)
+            if result:
+                return result
+
+        # Source 7: CORE
+        core_url = try_core_pdf(doi, title, timeout, logger)
+        if core_url and _try_download_pdf("core", core_url):
+            return str(pdf_path), "pdf"
+
+        # Source 8: HTML-to-text fallback
+        result = try_fetch_text(paper_url, safe_name, output_dir, timeout, headers, logger)
+        if result:
+            return result
+
+    logger.warning(f"    All sources exhausted for: {title_short}...")
+    return None, None
 
 
 # ---------------------------------------------------------------------------
@@ -524,9 +841,9 @@ def run(cfg: dict):
 
     output_dir = Path(cfg.get("output_dir", "output"))
     output_dir.mkdir(parents=True, exist_ok=True)
-    # PDFs go to a shared folder alongside the date-stamped output dir
-    pdf_dir = output_dir.parent / "pdfs"
-    pdf_dir.mkdir(parents=True, exist_ok=True)
+    # Source files go to a shared folder alongside the date-stamped output dir
+    source_dir = output_dir.parent / "source"
+    source_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("=" * 60)
     logger.info("FETCH & DOWNLOAD — Genomics Paper Collector")
@@ -560,39 +877,46 @@ def run(cfg: dict):
 
     if not genomics:
         logger.warning("  No genomics papers found. Exiting.")
-        manifest = {"papers": [], "pdf_dir": str(pdf_dir), "date": datetime.now().strftime("%Y-%m-%d")}
+        manifest = {"papers": [], "source_dir": str(source_dir), "date": datetime.now().strftime("%Y-%m-%d")}
         manifest_path = output_dir / "manifest.json"
         manifest_path.write_text(json.dumps(manifest, indent=2))
         print(f"\nMANIFEST: {manifest_path}")
         return
 
-    # Step 4: Download PDFs
+    # Step 4: Download source files
     if cfg.get("download_pdfs", True):
-        logger.info("\nStep 4: Downloading PDFs...")
+        logger.info("\nStep 4: Downloading source files...")
         timeout = cfg.get("pdf_timeout", 30)
         for i, paper in enumerate(genomics):
             logger.info(f"  [{i+1}/{len(genomics)}] {paper['title'][:60]}...")
-            pdf_path = download_pdf(paper, pdf_dir, timeout, logger)
-            paper["pdf_path"] = pdf_path or ""
-            paper["review_mode"] = "pdf" if pdf_path else "abstract"
+            source_path, source_format = download_source(paper, source_dir, timeout, logger)
+            paper["source_path"] = source_path or ""
+            paper["source_format"] = source_format or ""
+            if source_format == "pdf":
+                paper["review_mode"] = "pdf"
+            elif source_format in ("json", "xml", "txt"):
+                paper["review_mode"] = "text"
+            else:
+                paper["review_mode"] = "abstract"
             time.sleep(0.3)
 
-        pdf_count = sum(1 for p in genomics if p.get("pdf_path"))
-        logger.info(f"  Downloaded {pdf_count}/{len(genomics)} PDFs")
+        source_count = sum(1 for p in genomics if p.get("source_path"))
+        logger.info(f"  Downloaded {source_count}/{len(genomics)} source files")
     else:
-        logger.info("\nStep 4: Skipping PDF download (--no-pdf)")
+        logger.info("\nStep 4: Skipping source file download (--no-pdf)")
         for p in genomics:
-            p["pdf_path"] = ""
+            p["source_path"] = ""
+            p["source_format"] = ""
             p["review_mode"] = "abstract"
 
     # Step 5: Write manifest
     manifest = {
         "date": datetime.now().strftime("%Y-%m-%d"),
         "days_lookback": cfg["days_lookback"],
-        "pdf_dir": str(pdf_dir),
+        "source_dir": str(source_dir),
         "total_fetched": len(all_papers),
         "total_genomics": len(genomics),
-        "total_pdfs": sum(1 for p in genomics if p.get("pdf_path")),
+        "total_sources": sum(1 for p in genomics if p.get("source_path")),
         "papers": genomics,
     }
     manifest_path = output_dir / "manifest.json"
@@ -601,7 +925,7 @@ def run(cfg: dict):
     logger.info("\n" + "=" * 60)
     logger.info("FETCH COMPLETE")
     logger.info(f"  Papers: {len(genomics)}")
-    logger.info(f"  PDFs: {manifest['total_pdfs']}")
+    logger.info(f"  Source files: {manifest['total_sources']}")
     logger.info(f"  Manifest: {manifest_path}")
     logger.info("=" * 60)
 
@@ -669,8 +993,8 @@ def run_doi_mode(cfg: dict, dois: list[str]):
 
     output_dir = Path(cfg.get("output_dir", "output"))
     output_dir.mkdir(parents=True, exist_ok=True)
-    pdf_dir = output_dir.parent / "pdfs"
-    pdf_dir.mkdir(parents=True, exist_ok=True)
+    source_dir = output_dir.parent / "source"
+    source_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("=" * 60)
     logger.info("FETCH & DOWNLOAD — DOI-Specific Mode")
@@ -701,23 +1025,30 @@ def run_doi_mode(cfg: dict, dois: list[str]):
         paper["matched_keywords"] = matched if matched else ["genomics"]
         logger.info(f"  {paper['title'][:50]}... -> keywords: {', '.join(paper['matched_keywords'][:4])}")
 
-    # Step 3: Download PDFs
+    # Step 3: Download source files
     if cfg.get("download_pdfs", True):
-        logger.info("\nStep 3: Downloading PDFs...")
+        logger.info("\nStep 3: Downloading source files...")
         timeout = cfg.get("pdf_timeout", 30)
         for i, paper in enumerate(papers):
             logger.info(f"  [{i+1}/{len(papers)}] {paper['title'][:60]}...")
-            pdf_path = download_pdf(paper, pdf_dir, timeout, logger)
-            paper["pdf_path"] = pdf_path or ""
-            paper["review_mode"] = "pdf" if pdf_path else "abstract"
+            source_path, source_format = download_source(paper, source_dir, timeout, logger)
+            paper["source_path"] = source_path or ""
+            paper["source_format"] = source_format or ""
+            if source_format == "pdf":
+                paper["review_mode"] = "pdf"
+            elif source_format in ("json", "xml", "txt"):
+                paper["review_mode"] = "text"
+            else:
+                paper["review_mode"] = "abstract"
             time.sleep(0.3)
 
-        pdf_count = sum(1 for p in papers if p.get("pdf_path"))
-        logger.info(f"  Downloaded {pdf_count}/{len(papers)} PDFs")
+        source_count = sum(1 for p in papers if p.get("source_path"))
+        logger.info(f"  Downloaded {source_count}/{len(papers)} source files")
     else:
-        logger.info("\nStep 3: Skipping PDF download (--no-pdf)")
+        logger.info("\nStep 3: Skipping source file download (--no-pdf)")
         for p in papers:
-            p["pdf_path"] = ""
+            p["source_path"] = ""
+            p["source_format"] = ""
             p["review_mode"] = "abstract"
 
     # Step 4: Write manifest
@@ -725,9 +1056,9 @@ def run_doi_mode(cfg: dict, dois: list[str]):
         "date": datetime.now().strftime("%Y-%m-%d"),
         "mode": "doi-specific",
         "dois": dois,
-        "pdf_dir": str(pdf_dir),
+        "source_dir": str(source_dir),
         "total_fetched": len(papers),
-        "total_pdfs": sum(1 for p in papers if p.get("pdf_path")),
+        "total_sources": sum(1 for p in papers if p.get("source_path")),
         "papers": papers,
     }
     manifest_path = output_dir / "manifest.json"
@@ -736,7 +1067,7 @@ def run_doi_mode(cfg: dict, dois: list[str]):
     logger.info("\n" + "=" * 60)
     logger.info("DOI FETCH COMPLETE")
     logger.info(f"  Papers: {len(papers)}")
-    logger.info(f"  PDFs: {manifest['total_pdfs']}")
+    logger.info(f"  Source files: {manifest['total_sources']}")
     logger.info(f"  Manifest: {manifest_path}")
     logger.info("=" * 60)
 

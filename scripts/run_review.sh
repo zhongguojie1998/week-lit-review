@@ -7,6 +7,8 @@
 #   bash scripts/run_review.sh --days 7 --max-papers 20
 #   bash scripts/run_review.sh --days 7 --model opus
 #   bash scripts/run_review.sh --no-pdf
+#   bash scripts/run_review.sh --gmail-stork
+#   bash scripts/run_review.sh --gmail-stork --max-emails 3 --keywords "basal ganglia,GWAS"
 
 set -euo pipefail
 
@@ -40,9 +42,15 @@ while [[ $# -gt 0 ]]; do
             MODEL="$2"; shift 2 ;;
         --no-pdf)
             EXTRA_ARGS="$EXTRA_ARGS --no-pdf"; shift ;;
+        --gmail-stork)
+            EXTRA_ARGS="$EXTRA_ARGS --gmail-stork"; shift ;;
+        --max-emails)
+            EXTRA_ARGS="$EXTRA_ARGS --max-emails $2"; shift 2 ;;
+        --keywords)
+            EXTRA_ARGS="$EXTRA_ARGS --keywords \"$2\""; shift 2 ;;
         *)
             echo "Unknown option: $1" >&2
-            echo "Usage: $0 [--days N] [--max-papers N] [--model MODEL] [--no-pdf]" >&2
+            echo "Usage: $0 [--days N] [--max-papers N] [--model MODEL] [--no-pdf] [--gmail-stork] [--max-emails N] [--keywords KW]" >&2
             exit 1 ;;
     esac
 done
@@ -62,7 +70,7 @@ echo ""
 
 BASE_DIR="$HOME/Desktop/Claude/week-lit-review-results"
 OUTPUT_DIR="${BASE_DIR}/$(date +%Y-%m-%d)"
-mkdir -p "${OUTPUT_DIR}" "${BASE_DIR}/pdfs" "${BASE_DIR}/reviews"
+mkdir -p "${OUTPUT_DIR}" "${BASE_DIR}/source" "${BASE_DIR}/reviews"
 LOG_FILE="${OUTPUT_DIR}/run_$(date +%Y-%m-%d_%H%M%S).log"
 
 claude -p "/weekly-lit-review:weekly-lit-review ${SKILL_ARGS}" \

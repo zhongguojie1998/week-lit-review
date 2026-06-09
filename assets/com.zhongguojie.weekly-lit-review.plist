@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.zhongguojie.weekly-lit-review</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/guojiezhong/Desktop.personal/Claude/week-lit-review/scripts/daily_prefetch.sh</string>
+    </array>
+
+    <!-- Fire every day at 12:00 local time. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>12</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- If the Mac was asleep at 12:00, run as soon as it wakes. -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/guojiezhong/Desktop/Claude/week-lit-review-results/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/guojiezhong/Desktop/Claude/week-lit-review-results/launchd.err.log</string>
+</dict>
+</plist>

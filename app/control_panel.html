@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lit Review</title>
+<style>
+  :root { --blue:#3498db; --dark:#2c3e50; --green:#2ecc71; --red:#e74c3c; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+    margin: 0; color: #2c3e50; background: #f5f5f5; font-size: 14px;
+  }
+  header {
+    background: #fff; border-bottom: 1px solid #ddd; padding: 18px 22px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  }
+  header h1 { font-size: 20px; margin: 0 0 4px; }
+  header .sub { color: #7f8c8d; font-size: 12px; }
+  .wrap { padding: 22px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  button {
+    border: 0; border-radius: 8px; padding: 12px 18px; font-size: 14px; cursor: pointer;
+    background: #ecf0f1; color: var(--dark); font-weight: 600;
+  }
+  button.primary { background: var(--blue); color: #fff; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .card { background: #fff; border: 1px solid #e3e8ec; border-radius: 10px; padding: 16px 18px; margin-bottom: 16px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: #95a5a6; margin: 0 0 10px; }
+  .engine label { display: inline-flex; align-items: center; gap: 6px; margin-right: 18px; font-size: 14px; cursor: pointer; }
+  #status { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #bdc3c7; flex: 0 0 auto; }
+  .dot.busy { background: var(--blue); animation: pulse 1s infinite; }
+  .dot.ok { background: var(--green); }
+  .dot.err { background: var(--red); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  #log {
+    background: #1e272e; color: #d2dae2; font-family: 'SF Mono', Menlo, monospace;
+    font-size: 12px; border-radius: 8px; padding: 12px 14px; height: 180px; overflow-y: auto;
+    white-space: pre-wrap; line-height: 1.5;
+  }
+  .stat { font-weight: 700; color: var(--blue); }
+</style>
+</head>
+<body>
+<header>
+  <h1>📚 Lit Review</h1>
+  <div class="sub" id="meta">Loading…</div>
+</header>
+
+<div class="wrap">
+  <div class="row">
+    <button id="fetch" class="primary">Fetch candidates</button>
+    <button id="review">Select &amp; review…</button>
+    <button id="summary">Open today's summary</button>
+  </div>
+
+  <div class="card engine">
+    <h2>Review engine</h2>
+    <div id="engines"></div>
+  </div>
+
+  <div class="card">
+    <h2>Status</h2>
+    <div id="status"><span class="dot" id="dot"></span><span id="statusText">idle</span></div>
+  </div>
+
+  <div class="card">
+    <h2>Activity</h2>
+    <div id="log"></div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function setBusy(on){
+  for (const b of document.querySelectorAll("button")) b.disabled = on;
+  $("dot").className = "dot" + (on ? " busy" : "");
+}
+
+// Called from Python via evaluate_js.
+function pushStatus(state){          // {text, kind, log, meta, engines}
+  if (state.text !== undefined) $("statusText").textContent = state.text;
+  if (state.kind) $("dot").className = "dot " + state.kind;
+  if (state.busy !== undefined) setBusy(state.busy);
+  if (state.meta !== undefined) $("meta").innerHTML = state.meta;
+  if (state.log){
+    const el = $("log");
+    el.textContent += (el.textContent ? "\n" : "") + state.log;
+    el.scrollTop = el.scrollHeight;
+  }
+  if (state.engines) renderEngines(state.engines);
+}
+
+function renderEngines(engines){     // [{id, label, selected}]
+  const box = $("engines"); box.innerHTML = "";
+  for (const e of engines){
+    const lab = document.createElement("label");
+    lab.innerHTML =
+      `<input type="radio" name="engine" value="${e.id}" ${e.selected ? "checked" : ""}> ${e.label}`;
+    lab.querySelector("input").onchange = () => window.pywebview.api.set_engine(e.id);
+    box.appendChild(lab);
+  }
+}
+
+$("fetch").onclick   = () => window.pywebview.api.fetch();
+$("review").onclick  = () => window.pywebview.api.select_and_review();
+$("summary").onclick = () => window.pywebview.api.open_summary();
+
+window.addEventListener("pywebviewready", async () => {
+  pushStatus(await window.pywebview.api.get_state());
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Select papers to deep-review</title>
+<style>
+  :root { --blue:#3498db; --dark:#2c3e50; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+    margin: 0; color: #333; background: #f5f5f5; font-size: 13px;
+  }
+  header {
+    position: sticky; top: 0; z-index: 5; background: #fff;
+    border-bottom: 1px solid #ddd; padding: 12px 16px;
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  }
+  header h1 { font-size: 15px; margin: 0; color: var(--dark); flex: 0 0 auto; }
+  #filter { flex: 1 1 220px; padding: 7px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; }
+  .spacer { flex: 1 1 auto; }
+  label.toggle { font-size: 12px; color: #555; display: flex; align-items: center; gap: 5px; }
+  button {
+    border: 0; border-radius: 6px; padding: 8px 14px; font-size: 13px; cursor: pointer;
+    background: #ecf0f1; color: var(--dark);
+  }
+  button.primary { background: var(--blue); color: #fff; font-weight: 600; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  #count { font-size: 12px; color: #7f8c8d; }
+  .wrap { padding: 0 12px 90px; }
+  table { width: 100%; border-collapse: collapse; background: #fff; }
+  thead th {
+    position: sticky; top: 57px; background: var(--dark); color: #fff; z-index: 4;
+    text-align: left; padding: 8px 8px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  }
+  thead th .arrow { opacity: .5; font-size: 10px; }
+  td { padding: 7px 8px; border-bottom: 1px solid #eee; vertical-align: top; }
+  tr.reviewed { opacity: .45; }
+  tr:hover { background: #f0f7fc; }
+  .title { font-weight: 600; color: var(--dark); }
+  .abs { display: none; color: #555; margin-top: 4px; font-style: italic; max-width: 70ch; }
+  tr.open .abs { display: block; }
+  .kw { color: #2980b9; font-size: 11px; }
+  .src { color: #7f8c8d; white-space: nowrap; }
+  .nodoi { color: #c0392b; font-size: 11px; }
+  td.c { text-align: center; }
+  footer {
+    position: fixed; bottom: 0; left: 0; right: 0; background: #fff;
+    border-top: 1px solid #ddd; padding: 12px 16px; display: flex; gap: 12px; align-items: center;
+    box-shadow: 0 -1px 6px rgba(0,0,0,.08);
+  }
+  #selcount { font-weight: 600; color: var(--dark); }
+</style>
+</head>
+<body>
+<header>
+  <h1>📄 Select papers</h1>
+  <input id="filter" placeholder="Filter by title, author, affiliation, keyword, source…">
+  <label class="toggle"><input type="checkbox" id="hideRev"> hide already-reviewed</label>
+  <span class="spacer"></span>
+  <span id="count"></span>
+</header>
+
+<div class="wrap">
+  <table>
+    <thead>
+      <tr id="head"></tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+
+<footer>
+  <button id="all">Select all (shown)</button>
+  <button id="none">Clear</button>
+  <span class="spacer"></span>
+  <span id="selcount">0 selected</span>
+  <button id="cancel">Cancel</button>
+  <button id="go" class="primary" disabled>Deep-review selected →</button>
+</footer>
+
+<script>
+const COLS = [
+  { key: "_sel",   label: "" },
+  { key: "n",      label: "#" },
+  { key: "date",   label: "Date" },
+  { key: "source", label: "Source" },
+  { key: "first_author", label: "1st author" },
+  { key: "corresponding_author", label: "Corresponding" },
+  { key: "affiliation", label: "Affiliation" },
+  { key: "_kw",    label: "Keywords" },
+  { key: "title",  label: "Title" },
+];
+let papers = [];
+let sortKey = "n", sortAsc = true;
+const selected = new Set();   // keys are paper.uid
+
+function kwStr(p){ return (p.matched_keywords || []).join(", "); }
+
+function visible(){
+  const q = document.getElementById("filter").value.toLowerCase().trim();
+  const hideRev = document.getElementById("hideRev").checked;
+  let list = papers.filter(p => {
+    if (hideRev && p.reviewed) return false;
+    if (!q) return true;
+    return [p.title, p.first_author, p.corresponding_author, p.affiliation, p.source, kwStr(p)]
+      .join(" ").toLowerCase().includes(q);
+  });
+  if (sortKey !== "_sel") {
+    list.sort((a,b) => {
+      let x = sortKey === "_kw" ? kwStr(a) : (a[sortKey] ?? "");
+      let y = sortKey === "_kw" ? kwStr(b) : (b[sortKey] ?? "");
+      if (sortKey === "n") { x = a.n; y = b.n; }
+      if (x < y) return sortAsc ? -1 : 1;
+      if (x > y) return sortAsc ? 1 : -1;
+      return 0;
+    });
+  }
+  return list;
+}
+
+function renderHead(){
+  const tr = document.getElementById("head");
+  tr.innerHTML = "";
+  for (const c of COLS){
+    const th = document.createElement("th");
+    const arrow = (c.key === sortKey) ? `<span class="arrow">${sortAsc ? "▲" : "▼"}</span>` : "";
+    th.innerHTML = c.label + " " + arrow;
+    if (c.key !== "_sel") th.onclick = () => {
+      if (sortKey === c.key) sortAsc = !sortAsc; else { sortKey = c.key; sortAsc = true; }
+      render();
+    };
+    tr.appendChild(th);
+  }
+}
+
+function render(){
+  renderHead();
+  const tb = document.getElementById("rows");
+  tb.innerHTML = "";
+  const list = visible();
+  for (const p of list){
+    const tr = document.createElement("tr");
+    if (p.reviewed) tr.classList.add("reviewed");
+    const checked = selected.has(p.uid) ? "checked" : "";
+    const dis = p.has_doi ? "" : "disabled";
+    const noDoi = p.has_doi ? "" : `<div class="nodoi">no DOI — abstract only</div>`;
+    tr.innerHTML = `
+      <td class="c"><input type="checkbox" data-uid="${p.uid}" ${checked} ${dis}></td>
+      <td class="c">${p.n}</td>
+      <td class="src">${p.date || ""}</td>
+      <td class="src">${p.source || ""}</td>
+      <td>${p.first_author || ""}</td>
+      <td>${p.corresponding_author || "—"}</td>
+      <td>${p.affiliation || "—"}</td>
+      <td class="kw">${kwStr(p)}</td>
+      <td>
+        <div class="title">${p.title || ""} ${p.reviewed ? "✔" : ""}</div>
+        ${noDoi}
+        <div class="abs">${(p.abstract || "").slice(0, 600)}</div>
+      </td>`;
+    const cb = tr.querySelector("input");
+    cb.onclick = (e) => { e.stopPropagation(); toggle(p.uid, cb.checked); };
+    tr.onclick = () => tr.classList.toggle("open");
+    tb.appendChild(tr);
+  }
+  document.getElementById("count").textContent =
+    `${list.length} shown · ${papers.length} total`;
+  updateSel();
+}
+
+function toggle(uid, on){ on ? selected.add(uid) : selected.delete(uid); updateSel(); }
+function updateSel(){
+  document.getElementById("selcount").textContent = `${selected.size} selected`;
+  document.getElementById("go").disabled = selected.size === 0;
+}
+
+function selectedDois(){
+  return papers.filter(p => selected.has(p.uid) && p.has_doi).map(p => p.doi);
+}
+
+document.getElementById("filter").oninput = render;
+document.getElementById("hideRev").onchange = render;
+document.getElementById("all").onclick = () => {
+  for (const p of visible()) if (p.has_doi) selected.add(p.uid);
+  render();
+};
+document.getElementById("none").onclick = () => { selected.clear(); render(); };
+document.getElementById("cancel").onclick = () => window.pywebview.api.cancel();
+document.getElementById("go").onclick = () => window.pywebview.api.submit(selectedDois());
+
+window.addEventListener("pywebviewready", async () => {
+  papers = await window.pywebview.api.get_papers();
+  render();
+});
+</script>
+</body>
+</html>

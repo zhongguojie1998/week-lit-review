@@ -1,3 +1,6 @@
 .DS_store
 *__pycache__/
 .history/
+.claude-plugin/
+app/.venv/
+app/LitReview.app/
